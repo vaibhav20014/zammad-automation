@@ -47,16 +47,62 @@ def run_disk_check(playbook_dir="/home/ubuntu/zammad-playbooks", inventory="inve
         return None
 
 
+def get_ticket_id_by_number(ticket_number):
+    """Zammad's UI shows ticket 'number' (e.g. 77009), but the API needs the internal 'id'."""
+    url = f"{ZAMMAD_URL}/api/v1/tickets/search?query=number:{ticket_number}"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        results = response.json()
+        if results:
+            return results[0]["id"]
+    print(f"Could not find ticket with number {ticket_number}")
+    return None
+
+
+def update_ticket(ticket_id, note, close=False):
+    """Posts a note on the ticket, optionally closes it."""
+    url = f"{ZAMMAD_URL}/api/v1/tickets/{ticket_id}"
+    payload = {
+        "article": {
+            "body": note,
+            "internal": True,
+        }
+    }
+    if close:
+        payload["state_id"] = 4  # 4 = closed
+
+    response = requests.put(url, headers=HEADERS, json=payload)
+    if response.status_code == 200:
+        print(f"Ticket #{ticket_id} updated successfully.")
+    else:
+        print(f"Failed to update ticket #{ticket_id}: {response.status_code}")
+        print(response.text)
+
+
+def handle_disk_ticket(ticket_number):
+    """Runs the disk check and reports the result back to the given ticket."""
+    ticket_id = get_ticket_id_by_number(ticket_number)
+    if not ticket_id:
+        return
+
+    output = run_disk_check()
+    if not output:
+        update_ticket(ticket_id, "Automation error: could not run disk check.", close=False)
+        return
+
+    for play in output.get("plays", []):
+        for task in play.get("tasks", []):
+            task_result = task.get("hosts", {}).get("target-server-1", {})
+            if "msg" in task_result:
+                msg = task_result["msg"]
+                if "below threshold" in msg:
+                    update_ticket(ticket_id, f"Automated check: {msg}", close=True)
+                elif "Current disk usage" in msg:
+                    print(msg)
+
+
 if __name__ == "__main__":
     if not ZAMMAD_URL or not ZAMMAD_TOKEN:
         print("Missing ZAMMAD_URL or ZAMMAD_TOKEN in your .env file.")
     else:
-        test_connection()
-        print("\n--- Running disk check via Ansible ---")
-        output = run_disk_check()
-        if output:
-            for play in output.get("plays", []):
-                for task in play.get("tasks", []):
-                    task_result = task.get("hosts", {}).get("target-server-1", {})
-                    if "msg" in task_result:
-                        print(task_result["msg"])
+        handle_disk_ticket(77009)
