@@ -16,23 +16,10 @@ HEADERS = {
 
 INVENTORY_PATH = "/home/ubuntu/zammad-playbooks/inventory.ini"
 PLAYBOOK_DIR = "/home/ubuntu/zammad-playbooks"
-
-
-def test_connection():
-    url = f"{ZAMMAD_URL}/api/v1/tickets"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        tickets = response.json()
-        print(f"Connected successfully. Found {len(tickets)} ticket(s).")
-        for t in tickets:
-            print(f"  #{t.get('number')} - {t.get('title')} (state_id: {t.get('state_id')})")
-    else:
-        print(f"Connection failed. Status code: {response.status_code}")
-        print(response.text)
+PROCESSED_TAG = "automation-processed"
 
 
 def load_known_servers(inventory_path=INVENTORY_PATH):
-    """Reads server names directly from the Ansible inventory file."""
     servers = set()
     with open(inventory_path, "r") as f:
         for line in f:
@@ -45,7 +32,6 @@ def load_known_servers(inventory_path=INVENTORY_PATH):
 
 
 def extract_server_name(ticket_title, ticket_body, known_servers):
-    """Looks for any known server name mentioned in the ticket text."""
     text = f"{ticket_title} {ticket_body}".lower()
     for server in known_servers:
         if server.lower() in text:
@@ -54,16 +40,13 @@ def extract_server_name(ticket_title, ticket_body, known_servers):
 
 
 def find_open_disk_tickets():
-    """Searches Zammad for open/new tickets that look like disk-space issues and haven't been processed yet."""
-    query = '(title:*disk* OR title:*server*) AND state.name:(new OR open) AND NOT tags:automation-processed'
+    query = f'(title:*disk* OR title:*server*) AND state.name:(new OR open) AND NOT tags:{PROCESSED_TAG}'
     url = f"{ZAMMAD_URL}/api/v1/tickets/search?query={query}&limit=20"
     response = requests.get(url, headers=HEADERS)
-
     if response.status_code != 200:
         print(f"Ticket search failed: {response.status_code}")
         print(response.text)
         return []
-
     return response.json()
 
 
@@ -87,22 +70,24 @@ def run_disk_check(target_host, playbook_dir=PLAYBOOK_DIR, inventory="inventory.
 
 
 def update_ticket(ticket_id, note, close=False):
-    """Posts a note on the ticket, optionally closes it."""
     url = f"{ZAMMAD_URL}/api/v1/tickets/{ticket_id}"
-    payload = {
-        "article": {
-            "body": note,
-            "internal": True,
-        }
-    }
+    payload = {"article": {"body": note, "internal": True}}
     if close:
-        payload["state_id"] = 4  # 4 = closed
-
+        payload["state_id"] = 4
     response = requests.put(url, headers=HEADERS, json=payload)
     if response.status_code == 200:
         print(f"Ticket #{ticket_id} updated successfully.")
     else:
         print(f"Failed to update ticket #{ticket_id}: {response.status_code}")
+        print(response.text)
+
+
+def tag_ticket(ticket_id, tag):
+    url = f"{ZAMMAD_URL}/api/v1/tags/add"
+    payload = {"object": "Ticket", "o_id": ticket_id, "item": tag}
+    response = requests.post(url, headers=HEADERS, json=payload)
+    if response.status_code != 200:
+        print(f"Failed to tag ticket #{ticket_id}: {response.status_code}")
         print(response.text)
 
 
@@ -116,13 +101,14 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
             close=False,
         )
         print(f"Ticket #{ticket_number}: no server identified, escalated to L2.")
+        tag_ticket(ticket_id, PROCESSED_TAG)
         return
 
-    # server is guaranteed to be reachable since it matched our known inventory
     output = run_disk_check(target_host=server)
     if not output:
         update_ticket(ticket_id, f"Automation error: could not run disk check on {server}. Escalating to L2.", close=False)
         print(f"Ticket #{ticket_number}: check failed, escalated to L2.")
+        tag_ticket(ticket_id, PROCESSED_TAG)
         return
 
     for play in output.get("plays", []):
@@ -133,15 +119,16 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
                 if "below threshold" in msg:
                     update_ticket(ticket_id, f"Automated check on {server}: {msg}", close=True)
                     print(f"Ticket #{ticket_number}: resolved, closed.")
+                    tag_ticket(ticket_id, PROCESSED_TAG)
                     return
 
-    # If we got here, usage was above threshold but cleanup didn't resolve it enough
     update_ticket(
         ticket_id,
         f"Automation attempted cleanup on {server} but could not confirm resolution. Escalating to L2.",
         close=False,
     )
     print(f"Ticket #{ticket_number}: cleanup inconclusive, escalated to L2.")
+    tag_ticket(ticket_id, PROCESSED_TAG)
 
 
 if __name__ == "__main__":
@@ -160,8 +147,3 @@ if __name__ == "__main__":
                 handle_disk_ticket(
                     t["id"], t["number"], t.get("title", ""), t.get("note", ""), known_servers
                 )
-                tag_ticket(t["id"], "automation-processed")
-def tag_ticket(ticket_id, tag):
-    url = f"{ZAMMAD_URL}/api/v1/tags/add"
-    payload = {"object": "Ticket", "o_id": ticket_id, "item": tag}
-    requests.post(url, headers=HEADERS, json=payload)
