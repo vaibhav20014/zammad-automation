@@ -54,8 +54,8 @@ def extract_server_name(ticket_title, ticket_body, known_servers):
 
 
 def find_open_disk_tickets():
-    """Searches Zammad for open/new tickets that look like disk-space issues."""
-    query = 'title:*disk* AND state.name:(new OR open)'
+    """Searches Zammad for open/new tickets that look like disk-space issues and haven't been processed yet."""
+    query = '(title:*disk* OR title:*server*) AND state.name:(new OR open) AND NOT tags:automation-processed'
     url = f"{ZAMMAD_URL}/api/v1/tickets/search?query={query}&limit=20"
     response = requests.get(url, headers=HEADERS)
 
@@ -160,3 +160,8 @@ if __name__ == "__main__":
                 handle_disk_ticket(
                     t["id"], t["number"], t.get("title", ""), t.get("note", ""), known_servers
                 )
+                tag_ticket(t["id"], "automation-processed")
+def tag_ticket(ticket_id, tag):
+    url = f"{ZAMMAD_URL}/api/v1/tags/add"
+    payload = {"object": "Ticket", "o_id": ticket_id, "item": tag}
+    requests.post(url, headers=HEADERS, json=payload)
