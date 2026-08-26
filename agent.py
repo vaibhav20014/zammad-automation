@@ -17,6 +17,7 @@ HEADERS = {
 INVENTORY_PATH = "/home/ubuntu/zammad-playbooks/inventory.ini"
 PLAYBOOK_DIR = "/home/ubuntu/zammad-playbooks"
 PROCESSED_TAG = "automation-processed"
+L2_GROUP_NAME = "L2-Support"
 
 
 def load_known_servers(inventory_path=INVENTORY_PATH):
@@ -69,11 +70,13 @@ def run_disk_check(target_host, playbook_dir=PLAYBOOK_DIR, inventory="inventory.
         return None
 
 
-def update_ticket(ticket_id, note, close=False):
+def update_ticket(ticket_id, note, close=False, group=None):
     url = f"{ZAMMAD_URL}/api/v1/tickets/{ticket_id}"
     payload = {"article": {"body": note, "internal": True}}
     if close:
         payload["state_id"] = 4
+    if group:
+        payload["group"] = group
     response = requests.put(url, headers=HEADERS, json=payload)
     if response.status_code == 200:
         print(f"Ticket #{ticket_id} updated successfully.")
@@ -99,6 +102,7 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
             ticket_id,
             "Automation: could not determine which server this ticket refers to. Escalating to L2 for manual triage.",
             close=False,
+            group=L2_GROUP_NAME,
         )
         print(f"Ticket #{ticket_number}: no server identified, escalated to L2.")
         tag_ticket(ticket_id, PROCESSED_TAG)
@@ -106,7 +110,12 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
 
     output = run_disk_check(target_host=server)
     if not output:
-        update_ticket(ticket_id, f"Automation error: could not run disk check on {server}. Escalating to L2.", close=False)
+        update_ticket(
+            ticket_id,
+            f"Automation error: could not run disk check on {server}. Escalating to L2.",
+            close=False,
+            group=L2_GROUP_NAME,
+        )
         print(f"Ticket #{ticket_number}: check failed, escalated to L2.")
         tag_ticket(ticket_id, PROCESSED_TAG)
         return
@@ -126,6 +135,7 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
         ticket_id,
         f"Automation attempted cleanup on {server} but could not confirm resolution. Escalating to L2.",
         close=False,
+        group=L2_GROUP_NAME,
     )
     print(f"Ticket #{ticket_number}: cleanup inconclusive, escalated to L2.")
     tag_ticket(ticket_id, PROCESSED_TAG)
