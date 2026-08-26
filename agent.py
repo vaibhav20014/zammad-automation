@@ -86,7 +86,7 @@ def tag_ticket(ticket_id, tag):
     url = f"{ZAMMAD_URL}/api/v1/tags/add"
     payload = {"object": "Ticket", "o_id": ticket_id, "item": tag}
     response = requests.post(url, headers=HEADERS, json=payload)
-    if response.status_code != 200:
+    if response.status_code not in (200, 201):
         print(f"Failed to tag ticket #{ticket_id}: {response.status_code}")
         print(response.text)
 
