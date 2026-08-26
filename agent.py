@@ -80,9 +80,11 @@ def update_ticket(ticket_id, note, close=False, group=None):
     response = requests.put(url, headers=HEADERS, json=payload)
     if response.status_code == 200:
         print(f"Ticket #{ticket_id} updated successfully.")
+        return True
     else:
         print(f"Failed to update ticket #{ticket_id}: {response.status_code}")
         print(response.text)
+        return False
 
 
 def tag_ticket(ticket_id, tag):
@@ -98,26 +100,28 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
     server = extract_server_name(ticket_title, ticket_body, known_servers)
 
     if not server:
-        update_ticket(
+        success = update_ticket(
             ticket_id,
             "Automation: could not determine which server this ticket refers to. Escalating to L2 for manual triage.",
             close=False,
             group=L2_GROUP_NAME,
         )
         print(f"Ticket #{ticket_number}: no server identified, escalated to L2.")
-        tag_ticket(ticket_id, PROCESSED_TAG)
+        if success:
+            tag_ticket(ticket_id, PROCESSED_TAG)
         return
 
     output = run_disk_check(target_host=server)
     if not output:
-        update_ticket(
+        success = update_ticket(
             ticket_id,
             f"Automation error: could not run disk check on {server}. Escalating to L2.",
             close=False,
             group=L2_GROUP_NAME,
         )
         print(f"Ticket #{ticket_number}: check failed, escalated to L2.")
-        tag_ticket(ticket_id, PROCESSED_TAG)
+        if success:
+            tag_ticket(ticket_id, PROCESSED_TAG)
         return
 
     for play in output.get("plays", []):
@@ -126,19 +130,21 @@ def handle_disk_ticket(ticket_id, ticket_number, ticket_title, ticket_body, know
             if "msg" in task_result:
                 msg = task_result["msg"]
                 if "below threshold" in msg:
-                    update_ticket(ticket_id, f"Automated check on {server}: {msg}", close=True)
+                    success = update_ticket(ticket_id, f"Automated check on {server}: {msg}", close=True)
                     print(f"Ticket #{ticket_number}: resolved, closed.")
-                    tag_ticket(ticket_id, PROCESSED_TAG)
+                    if success:
+                        tag_ticket(ticket_id, PROCESSED_TAG)
                     return
 
-    update_ticket(
+    success = update_ticket(
         ticket_id,
         f"Automation attempted cleanup on {server} but could not confirm resolution. Escalating to L2.",
         close=False,
         group=L2_GROUP_NAME,
     )
     print(f"Ticket #{ticket_number}: cleanup inconclusive, escalated to L2.")
-    tag_ticket(ticket_id, PROCESSED_TAG)
+    if success:
+        tag_ticket(ticket_id, PROCESSED_TAG)
 
 
 if __name__ == "__main__":
