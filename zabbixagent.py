@@ -115,7 +115,7 @@ if __name__ == "__main__":
         if not auth_token:
             print("Zabbix login failed.")
         else:
-            problems = get_disk_problems(auth_token)
+            problems = get_problems(auth_token)
             processed = load_processed_events()
 
             new_count = 0
