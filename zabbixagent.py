@@ -126,4 +126,17 @@ if __name__ == "__main__":
 
                 print(f"DEBUG: event_id={event_id} hostname='{hostname}' problem_name='{problem_name}'")
 
-                ticket =
+                ticket = create_zammad_ticket(hostname, problem_name)
+
+                processed[event_id] = {
+                    "hostname": hostname,
+                    "problem_name": problem_name,
+                    "ticket_number": ticket.get("number") if ticket else None,
+                    "ticket_id": ticket.get("id") if ticket else None,
+                    "processed_at": datetime.now(timezone.utc).isoformat(),
+                    "ticket_created": ticket is not None,
+                }
+                new_count += 1
+
+            save_processed_events(processed)
+            print(f"Processed {new_count} new Zabbix problem(s).")
