@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,7 +33,6 @@ def zabbix_login():
 
 
 def get_disk_problems(auth_token):
-    """Fetch active Zabbix problems related to disk space."""
     payload = {
         "jsonrpc": "2.0",
         "method": "problem.get",
@@ -49,8 +49,6 @@ def get_disk_problems(auth_token):
 
 
 def get_hostname_for_trigger(auth_token, trigger_id):
-    """problem.get doesn't return host info directly in this Zabbix version,
-    so look it up separately via the trigger's objectid."""
     payload = {
         "jsonrpc": "2.0",
         "method": "trigger.get",
@@ -72,23 +70,24 @@ def get_hostname_for_trigger(auth_token, trigger_id):
 def load_processed_events():
     if os.path.exists(PROCESSED_EVENTS_FILE):
         with open(PROCESSED_EVENTS_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
+            return json.load(f)
+    return {}
 
 
 def save_processed_events(events):
     with open(PROCESSED_EVENTS_FILE, "w") as f:
-        json.dump(list(events), f)
+        json.dump(events, f, indent=2)
 
 
 def create_zammad_ticket(hostname, problem_name):
+    title = f"Disk space warning on {hostname}"
     url = f"{ZAMMAD_URL}/api/v1/tickets"
     payload = {
-        "title": f"Disk space warning on {hostname}",
+        "title": title,
         "group": "L1-Support",
         "customer_id": "guess:zabbix@yourdomain.com",
         "article": {
-            "subject": f"Disk space warning on {hostname}",
+            "subject": title,
             "body": f"Zabbix alert: {problem_name} on host {hostname}.",
             "type": "note",
             "internal": True,
@@ -96,10 +95,13 @@ def create_zammad_ticket(hostname, problem_name):
     }
     response = requests.post(url, headers=ZAMMAD_HEADERS, json=payload)
     if response.status_code in (200, 201):
-        print(f"Created ticket for {hostname}: {problem_name}")
+        data = response.json()
+        print(f"Created ticket #{data.get('number')} for {hostname}: {problem_name}")
+        return data
     else:
         print(f"Failed to create ticket for {hostname}: {response.status_code}")
         print(response.text)
+        return None
 
 
 if __name__ == "__main__":
@@ -118,11 +120,10 @@ if __name__ == "__main__":
                 event_id = p["eventid"]
                 if event_id in processed:
                     continue
+
                 hostname = get_hostname_for_trigger(auth_token, p["objectid"])
                 problem_name = p.get("name", "Disk issue")
-                create_zammad_ticket(hostname, problem_name)
-                processed.add(event_id)
-                new_count += 1
 
-            save_processed_events(processed)
-            print(f"Processed {new_count} new Zabbix problem(s).")
+                print(f"DEBUG: event_id={event_id} hostname='{hostname}' problem_name='{problem_name}'")
+
+                ticket =
