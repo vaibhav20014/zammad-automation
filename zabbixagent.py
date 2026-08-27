@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ZABBIX_URL = os.getenv("ZABBIX_URL")       # e.g. http://103.251.252.55:8081/api_jsonrpc.php
+ZABBIX_URL = os.getenv("ZABBIX_URL")
 ZABBIX_USER = os.getenv("ZABBIX_USER")
 ZABBIX_PASSWORD = os.getenv("ZABBIX_PASSWORD")
 
@@ -38,15 +38,35 @@ def get_disk_problems(auth_token):
         "method": "problem.get",
         "params": {
             "output": "extend",
-            "selectHosts": ["host"],
             "recent": False,
-            "search": {"name": "disk"},  # matches trigger names containing "disk"
+            "search": {"name": "disk"},
         },
         "auth": auth_token,
         "id": 2,
     }
     response = requests.post(ZABBIX_URL, json=payload)
     return response.json().get("result", [])
+
+
+def get_hostname_for_trigger(auth_token, trigger_id):
+    """problem.get doesn't return host info directly in this Zabbix version,
+    so look it up separately via the trigger's objectid."""
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "trigger.get",
+        "params": {
+            "output": "extend",
+            "triggerids": trigger_id,
+            "selectHosts": ["host"],
+        },
+        "auth": auth_token,
+        "id": 3,
+    }
+    response = requests.post(ZABBIX_URL, json=payload)
+    result = response.json().get("result", [])
+    if result and result[0].get("hosts"):
+        return result[0]["hosts"][0]["host"]
+    return "unknown-host"
 
 
 def load_processed_events():
@@ -66,7 +86,7 @@ def create_zammad_ticket(hostname, problem_name):
     payload = {
         "title": f"Disk space warning on {hostname}",
         "group": "L1-Support",
-        "customer_id": "guess:zabbix@yourdomain.com",  # or a fixed system-user email
+        "customer_id": "guess:zabbix@yourdomain.com",
         "article": {
             "subject": f"Disk space warning on {hostname}",
             "body": f"Zabbix alert: {problem_name} on host {hostname}.",
@@ -98,7 +118,7 @@ if __name__ == "__main__":
                 event_id = p["eventid"]
                 if event_id in processed:
                     continue
-                hostname = p["hosts"][0]["host"] if p.get("hosts") else "unknown-host"
+                hostname = get_hostname_for_trigger(auth_token, p["objectid"])
                 problem_name = p.get("name", "Disk issue")
                 create_zammad_ticket(hostname, problem_name)
                 processed.add(event_id)
