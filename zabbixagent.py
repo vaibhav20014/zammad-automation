@@ -95,7 +95,7 @@ def create_zammad_ticket(hostname, problem_name):
         },
     }
     response = requests.post(url, headers=ZAMMAD_HEADERS, json=payload)
-    if response.status_code == 200:
+    if response.status_code in (200, 201):
         print(f"Created ticket for {hostname}: {problem_name}")
     else:
         print(f"Failed to create ticket for {hostname}: {response.status_code}")
