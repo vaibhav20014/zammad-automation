@@ -32,14 +32,13 @@ def zabbix_login():
     return response.json().get("result")
 
 
-def get_disk_problems(auth_token):
+def get_problems(auth_token):
     payload = {
         "jsonrpc": "2.0",
         "method": "problem.get",
         "params": {
             "output": "extend",
             "recent": False,
-            "search": {"name": "disk"},
         },
         "auth": auth_token,
         "id": 2,
@@ -53,17 +52,21 @@ def get_hostname_for_trigger(auth_token, trigger_id):
         "jsonrpc": "2.0",
         "method": "trigger.get",
         "params": {
-            "output": "extend",
+            "output": ["triggerid", "description"],
             "triggerids": trigger_id,
-            "selectHosts": ["host"],
         },
         "auth": auth_token,
         "id": 3,
     }
+
     response = requests.post(ZABBIX_URL, json=payload)
+    print("TRIGGER RESPONSE:", response.json())
+
     result = response.json().get("result", [])
-    if result and result[0].get("hosts"):
-        return result[0]["hosts"][0]["host"]
+
+    if result:
+        return result[0].get("description", "unknown-host")
+
     return "unknown-host"
 
 
