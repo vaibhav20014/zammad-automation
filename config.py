@@ -8,7 +8,7 @@ os.getenv() directly. This means:
   - easy to add new vars (e.g. KB_API_KEY later) without hunting through files
 """
 
-import os
+import os 
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
