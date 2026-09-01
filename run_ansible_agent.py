@@ -15,6 +15,6 @@ if __name__ == "__main__":
     logger.info("=== Ansible disk-ticket agent run starting ===")
     try:
         disk_ticket_service.run()
-    except Exception:
-        logger.exception("Unhandled error in ansible agent run")
+    except Exception as e:
+        logger.exception(f"Unhandled error in ansible agent run: {e}")
     logger.info("=== Ansible disk-ticket agent run finished ===")
