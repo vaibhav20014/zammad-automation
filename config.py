@@ -65,7 +65,7 @@ def load_settings() -> Settings:
             "/home/ubuntu/zammad-automation/processed_zabbix_events.json",
         ),
     )
-
+ 
 
 # Import this from anywhere: `from config import settings`
 settings = load_settings()
