@@ -13,7 +13,8 @@ and gets timestamps, levels, and rotation for free.
 import logging
 import logging.handlers
 import os
-
+from dotenv import load_dotenv
+load_dotenv()
 LOG_DIR = os.getenv("LOG_DIR", "/home/ubuntu/zammad-automation/logs")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
