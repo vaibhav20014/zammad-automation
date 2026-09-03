@@ -1,12 +1,9 @@
 """
-Wraps the ansible-playbook subprocess call. Nothing here knows about
-Zammad or tickets — it just runs a playbook against a host and returns
-parsed JSON output (or None on failure).
+Runs the disk-check/cleanup Ansible playbook and returns parsed output.
 """
 
 import json
 import logging
-import os
 import subprocess
 from config import settings
 
@@ -14,40 +11,28 @@ logger = logging.getLogger(__name__)
 
 
 def run_disk_check(target_host: str) -> dict | None:
-    env = os.environ.copy()
-    env["ANSIBLE_STDOUT_CALLBACK"] = "json"
-
     cmd = [
         "ansible-playbook",
-        "-i", "inventory.ini",
+        settings.disk_check_playbook_path,
+        "-i", settings.inventory_path,
         "--limit", target_host,
-        settings.playbook_name,
+        "-e", f"target_host={target_host}",
     ]
-    logger.info("Running ansible-playbook against host=%s", target_host)
 
     try:
         result = subprocess.run(
-            cmd,
-            cwd=settings.playbook_dir,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            cmd, capture_output=True, text=True, timeout=settings.ansible_timeout_seconds
         )
     except subprocess.TimeoutExpired:
-        logger.error("Ansible run timed out for host=%s", target_host)
+        logger.error("Ansible run timed out for host %s", target_host)
         return None
 
     if result.returncode != 0:
-        logger.error(
-            "Ansible run failed for host=%s (rc=%s): %s",
-            target_host, result.returncode, result.stderr.strip(),
-        )
+        logger.error("Ansible run failed for host %s: %s", target_host, result.stderr)
         return None
 
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
-        logger.exception("Could not parse Ansible JSON output for host=%s", target_host)
-        logger.debug("Raw stdout: %s", result.stdout)
+        logger.error("Could not parse Ansible output for host %s", target_host)
         return None

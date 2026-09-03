@@ -1,7 +1,7 @@
 """
-Small wrapper around the "processed events" JSON file, so the service
-code doesn't do raw file I/O directly. Swap this for a SQLite/Redis
-store later without touching zabbix_poll_service.py.
+Tracks which Zabbix event IDs have already had a Zammad ticket created
+for them, so repeated polling runs don't create duplicates. Backed by a
+simple JSON file - swap for a real DB later if volume grows.
 """
 
 import json
@@ -11,28 +11,42 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+_cache: set[str] | None = None
 
-def load() -> dict:
-    path = settings.processed_events_file
-    if not os.path.exists(path):
-        logger.info("No processed-events file yet at %s; starting fresh.", path)
-        return {}
+
+def _load() -> set[str]:
+    global _cache
+    if _cache is not None:
+        return _cache
+
+    if not os.path.exists(settings.processed_events_path):
+        _cache = set()
+        return _cache
+
     try:
-        with open(path, "r") as f:
-            data = json.load(f)
-            logger.debug("Loaded %d processed event(s) from %s", len(data), path)
-            return data
+        with open(settings.processed_events_path, "r") as f:
+            _cache = set(json.load(f))
     except (json.JSONDecodeError, OSError):
-        logger.exception("Failed to read processed-events file at %s; starting fresh.", path)
-        return {}
+        logger.exception("Failed to read processed events store, starting empty.")
+        _cache = set()
+
+    return _cache
 
 
-def save(events: dict) -> None:
-    path = settings.processed_events_file
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+def _save() -> None:
+    if _cache is None:
+        return
     try:
-        with open(path, "w") as f:
-            json.dump(events, f, indent=2)
-        logger.debug("Saved %d processed event(s) to %s", len(events), path)
+        with open(settings.processed_events_path, "w") as f:
+            json.dump(list(_cache), f)
     except OSError:
-        logger.exception("Failed to write processed-events file at %s", path)
+        logger.exception("Failed to write processed events store.")
+
+
+def is_processed(event_id: str) -> bool:
+    return str(event_id) in _load()
+
+
+def mark_processed(event_id: str) -> None:
+    _load().add(str(event_id))
+    _save()

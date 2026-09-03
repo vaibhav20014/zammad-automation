@@ -1,169 +1,83 @@
 """
-Agentic KB resolution: the model sees ticket text + KB titles, and
-decides for itself whether to fetch full article content before
-answering. It can call get_answer_content one or more times, then
-must call submit_final_response to finish.
-
-This replaces the old fixed select-then-generate pipeline with a real
-tool-use loop, so the model — not our code — decides which titles are
-worth opening.
+KB answer generation. Given ticket text and the list of published KB
+titles, lets the model browse titles and pull full content on demand
+(via get_kb_answer_content) before deciding on a reply. Mirrors the
+ticket-routing agent's tool-calling pattern, scoped to just KB lookups.
 """
 
-import json
 import logging
-import os
-from google import genai
-from google.genai import types
+import json
+from langchain.agents import create_agent
+from langchain_core.tools import tool
 from kb import knowledge_base_client
+from config import settings
 
 logger = logging.getLogger(__name__)
 
-MODEL = os.getenv("KB_ANSWER_MODEL", "gemini-2.5-flash")
-MAX_TOOL_ITERATIONS = 4
-
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-_SYSTEM_PROMPT = """You are a support-ticket triage assistant with access to a
-Knowledge Base search index. You will be given a customer's ticket text and a
-list of KB article titles that were returned by a search on that ticket.
-
-You decide what to do:
-- If one or more titles look like they plausibly answer the customer's
-  specific question, call get_answer_content on that article's id to read
-  the full text before deciding anything.
-- You may call get_answer_content on more than one article if several
-  titles look promising, but don't fetch titles that clearly don't match.
-- If NO titles look relevant at all, don't fetch anything — just submit a
-  short, friendly holding reply (e.g. "Thanks for reaching out — we're
-  looking into this and will follow up shortly.") with can_answer=false.
-- Only draft a real answer (can_answer=true) using information you
-  actually read via get_answer_content. Never state something as fact
-  that wasn't in a fetched article.
-- When you're done, call submit_final_response exactly once with your
-  decision — that ends the task."""
-
-_TOOLS = types.Tool(function_declarations=[
-    types.FunctionDeclaration(
-        name="get_answer_content",
-        description="Fetch the full title+body of a KB article by its id, to check if it actually answers the ticket.",
-        parameters={
-            "type": "object",
-            "properties": {"answer_id": {"type": "integer"}},
-            "required": ["answer_id"],
-        },
-    ),
-    types.FunctionDeclaration(
-        name="submit_final_response",
-        description="Finish the task with your final decision.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "can_answer": {"type": "boolean"},
-                "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-                "reply_text": {
-                    "type": "string",
-                    "description": "The reply to send — either a grounded answer, or a short holding message if can_answer is false.",
-                },
-                "used_article_ids": {"type": "array", "items": {"type": "integer"}},
-                "reasoning": {"type": "string"},
-            },
-            "required": ["can_answer", "confidence", "reply_text", "used_article_ids", "reasoning"],
-        },
-    ),
-])
+SYSTEM_PROMPT = (
+    "You are answering a support ticket using only the company's knowledge "
+    "base. You will be given the ticket text and a list of KB article "
+    "titles with their ids. Decide which title(s), if any, are likely to "
+    "answer the ticket, then call get_kb_answer_content with that id to "
+    "read the full article before answering - do not guess an answer from "
+    "the title alone. You may look up more than one article if unsure. "
+    "When ready, respond with ONLY a JSON object, no other text, in this "
+    "exact shape: "
+    '{"can_answer": true/false, "confidence": "high"/"medium"/"low", '
+    '"reply_text": "...", "reasoning": "..."}. '
+    "reply_text should be a direct, customer-facing answer written in your "
+    "own words - do not just paste the KB article verbatim. If nothing in "
+    "the KB is relevant, set can_answer to false and explain why in "
+    "reasoning."
+)
 
 
-def _execute_tool_call(name: str, args: dict) -> dict:
-    if name == "get_answer_content":
-        content = knowledge_base_client.get_answer_content(args["answer_id"])
-        if not content:
-            return {"error": f"Could not fetch article id={args['answer_id']}."}
-        return {
-            "id": args["answer_id"],
-            "title": content.get("title", ""),
-            "body": content.get("body", ""),
-        }
-    return {"error": f"Unknown tool: {name}"}
+@tool
+def get_kb_answer_content(answer_id: int) -> dict:
+    """Fetch the full title and body text of one KB answer by its id.
+    Use this before answering from a KB article - titles alone are not
+    enough to write an accurate reply."""
+    content = knowledge_base_client.get_answer_content(answer_id)
+    if not content:
+        return {"error": f"Could not fetch content for answer_id={answer_id}"}
+    return content
 
 
-def resolve_ticket(ticket_text: str, titled_hits: list[dict]) -> dict:
-    """
-    titled_hits: list of {"id": ..., "title": ...} from knowledge_base_client.search_kb().
-    Returns the submit_final_response payload, or a safe fallback on failure.
-    """
-    if not titled_hits:
-        return {
-            "can_answer": False,
-            "confidence": "low",
-            "reply_text": "Thanks for reaching out — we're looking into this and will follow up shortly.",
-            "used_article_ids": [],
-            "reasoning": "No KB hits were returned for this ticket.",
-        }
+def _extract_text(content) -> str:
+    """LangChain message content can be a plain string, or (with Gemini's
+    thought-signature metadata attached) a list of content blocks like
+    [{'type': 'text', 'text': '...', 'extras': {...}}]. Normalize both
+    into a single string before attempting JSON parsing."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return ""
 
-    titles_block = "\n".join(f"[id={h['id']}] {h['title']}" for h in titled_hits)
-    contents = [
-        types.Content(role="user", parts=[types.Part(text=(
-            f"Customer ticket:\n{ticket_text}\n\nKB search results (titles only):\n{titles_block}"
-        ))])
-    ]
 
-    for iteration in range(MAX_TOOL_ITERATIONS):
-        try:
-            response = _client.models.generate_content(
-                model=MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=_SYSTEM_PROMPT,
-                    tools=[_TOOLS],
-                ),
-            )
-        except Exception:
-            logger.exception("Gemini call failed during agentic KB resolution")
-            break
+def resolve_ticket(ticket_text: str, kb_titles: list[dict]) -> dict:
+    agent = create_agent(
+        model=settings.model,
+        tools=[get_kb_answer_content],
+        system_prompt=SYSTEM_PROMPT,
+    )
 
-        candidate = response.candidates[0]
-        contents.append(candidate.content)  # keep the model's turn in history
+    titles_block = "\n".join(f"- id={t['id']}: {t['title']}" for t in kb_titles)
+    prompt = f"Ticket text:\n{ticket_text}\n\nAvailable KB titles:\n{titles_block}"
 
-        function_calls = [
-            part.function_call for part in candidate.content.parts
-            if part.function_call is not None
-        ]
+    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
 
-        if not function_calls:
-            logger.warning("Model returned no tool call on iteration %d; stopping.", iteration)
-            break
+    final_message = _extract_text(result["messages"][-1].content)
+    try:
+        parsed = json.loads(final_message)
+    except (json.JSONDecodeError, TypeError):
+        logger.error("Could not parse answer_generator output as JSON: %s", final_message)
+        return {"can_answer": False, "confidence": "low", "reply_text": "", "reasoning": "Failed to parse model output."}
 
-        submitted = None
-        function_response_parts = []
-
-        for call in function_calls:
-            if call.name == "submit_final_response":
-                submitted = dict(call.args)
-                continue
-            logger.info("Model called %s(%s)", call.name, dict(call.args))
-            result = _execute_tool_call(call.name, dict(call.args))
-            function_response_parts.append(
-                types.Part(function_response=types.FunctionResponse(
-                    name=call.name, response=result
-                ))
-            )
-
-        if submitted is not None:
-            logger.info(
-                "Agentic KB resolution finished: can_answer=%s confidence=%s articles_used=%s",
-                submitted.get("can_answer"), submitted.get("confidence"),
-                submitted.get("used_article_ids"),
-            )
-            return submitted
-
-        # Feed tool results back for the next turn
-        contents.append(types.Content(role="user", parts=function_response_parts))
-
-    logger.warning("Agentic KB resolution hit max iterations or failed without a final response.")
-    return {
-        "can_answer": False,
-        "confidence": "low",
-        "reply_text": "Thanks for reaching out — we're looking into this and will follow up shortly.",
-        "used_article_ids": [],
-        "reasoning": "Model did not produce a final decision within the allowed steps.",
-    }
+    return parsed

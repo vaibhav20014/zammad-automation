@@ -15,6 +15,6 @@ if __name__ == "__main__":
     logger.info("=== Zabbix poll agent run starting ===")
     try:
         zabbix_poll_service.run()
-    except Exception as e:
-        logger.exception(f"Unhandled error in zabbix agent run: {e}")
+    except Exception:
+        logger.exception("Unhandled error in zabbix agent run")
     logger.info("=== Zabbix poll agent run finished ===")

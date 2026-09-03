@@ -1,0 +1,43 @@
+2026-09-03 10:34:17,302 [INFO] __main__: === Zabbix poll agent run starting ===
+2026-09-03 10:34:17,302 [ERROR] __main__: Unhandled error in zabbix agent run
+Traceback (most recent call last):
+  File "C:\Users\Dilip Prajapati\zammad-automation\run_zabbix_agent.py", line 17, in <module>
+    zabbix_poll_service.run()
+  File "C:\Users\Dilip Prajapati\zammad-automation\services\zabbix_poll_service.py", line 34, in run
+    problems = zabbix_client.get_active_problems()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dilip Prajapati\zammad-automation\clients\zabbix_client.py", line 32, in get_active_problems
+    return _call("problem.get", {
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dilip Prajapati\zammad-automation\clients\zabbix_client.py", line 19, in _call
+    "auth": settings.zabbix_token,
+            ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Settings' object has no attribute 'zabbix_token'. Did you mean: 'zabbix_user'?
+2026-09-03 10:34:17,302 [INFO] __main__: === Zabbix poll agent run finished ===
+2026-09-03 10:36:46,842 [INFO] __main__: === Zabbix poll agent run starting ===
+2026-09-03 10:36:46,842 [DEBUG] urllib3.connectionpool: Starting new HTTP connection (1): 103.251.252.69:80
+2026-09-03 10:36:47,022 [DEBUG] urllib3.connectionpool: http://103.251.252.69:80 "POST /api_jsonrpc.php/api_jsonrpc.php HTTP/11" 200 None
+2026-09-03 10:36:47,022 [INFO] clients.zabbix_client: Zabbix login successful.
+2026-09-03 10:36:47,127 [DEBUG] urllib3.connectionpool: http://103.251.252.69:80 "POST /api_jsonrpc.php/api_jsonrpc.php HTTP/11" 200 None
+2026-09-03 10:36:47,127 [ERROR] __main__: Unhandled error in zabbix agent run
+Traceback (most recent call last):
+  File "C:\Users\Dilip Prajapati\zammad-automation\run_zabbix_agent.py", line 17, in <module>
+    zabbix_poll_service.run()
+  File "C:\Users\Dilip Prajapati\zammad-automation\services\zabbix_poll_service.py", line 42, in run
+    if processed_events_store.is_processed(event_id):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dilip Prajapati\zammad-automation\state\processed_events_store.py", line 47, in is_processed
+    return str(event_id) in _load()
+                            ^^^^^^^
+  File "C:\Users\Dilip Prajapati\zammad-automation\state\processed_events_store.py", line 22, in _load
+    if not os.path.exists(settings.processed_events_path):
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Settings' object has no attribute 'processed_events_path'. Did you mean: 'processed_events_file'?
+2026-09-03 10:36:47,127 [INFO] __main__: === Zabbix poll agent run finished ===
+2026-09-03 10:39:07,389 [INFO] __main__: === Zabbix poll agent run starting ===
+2026-09-03 10:39:07,389 [DEBUG] urllib3.connectionpool: Starting new HTTP connection (1): 103.251.252.69:80
+2026-09-03 10:39:07,588 [DEBUG] urllib3.connectionpool: http://103.251.252.69:80 "POST /api_jsonrpc.php/api_jsonrpc.php HTTP/11" 200 None
+2026-09-03 10:39:07,588 [INFO] clients.zabbix_client: Zabbix login successful.
+2026-09-03 10:39:07,660 [DEBUG] urllib3.connectionpool: http://103.251.252.69:80 "POST /api_jsonrpc.php/api_jsonrpc.php HTTP/11" 200 None
+2026-09-03 10:39:07,677 [INFO] services.zabbix_poll_service: Created 0 new ticket(s) from 2 active problem(s).
+2026-09-03 10:39:07,677 [INFO] __main__: === Zabbix poll agent run finished ===

@@ -1,9 +1,6 @@
 """
-All Zammad API calls live here. Nothing in this file decides *what* to do
-with a ticket — it only knows how to talk to Zammad.
-
-This is the module you'll reuse later for the knowledge-base auto-answer
-feature (e.g. add `post_public_reply()` or `get_ticket_full_text()`).
+Thin HTTP wrapper around the Zammad REST API. No business logic here -
+just requests in, parsed JSON out.
 """
 
 import logging
@@ -12,64 +9,92 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
+_session = requests.Session()
+_session.headers.update({
     "Authorization": f"Token token={settings.zammad_token}",
     "Content-Type": "application/json",
-}
+})
 
 
 def search_tickets(query: str, limit: int = 20) -> list[dict]:
-    url = f"{settings.zammad_url}/api/v1/tickets/search"
-    params = {"query": query, "limit": limit}
-    logger.debug("Searching tickets with query=%s", query)
-
-    try:
-        response = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        response.raise_for_status()
-        results = response.json()
-        logger.info("Ticket search returned %d result(s).", len(results))
-        return results
-    except requests.RequestException:
-        logger.exception("Ticket search failed for query=%s", query)
-        return []
+    resp = _session.get(
+        f"{settings.zammad_url}/api/v1/tickets/search",
+        params={"query": query, "limit": limit},
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
-def update_ticket(
-    ticket_id: int, note: str, close: bool = False, group: str | None = None
-) -> bool:
-    url = f"{settings.zammad_url}/api/v1/tickets/{ticket_id}"
-    payload = {"article": {"body": note, "internal": True}}
+def get_ticket_with_articles(ticket_id: int) -> dict:
+    resp = _session.get(
+        f"{settings.zammad_url}/api/v1/tickets/{ticket_id}",
+        params={"expand": "true"},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_first_article_body(ticket_id: int) -> str | None:
+    ticket = get_ticket_with_articles(ticket_id)
+    articles = ticket.get("articles", [])
+    if not articles:
+        return None
+    return articles[0].get("body")
+
+
+def reply_to_ticket(ticket_id: int, text: str, close: bool = False) -> bool:
+    payload = {
+        "ticket_id": ticket_id,
+        "body": text,
+        "internal": False,
+        # no "type": "email" here - that requires email-channel metadata
+        # a web-created ticket doesn't have, which caused a 422 earlier
+    }
+    resp = _session.post(f"{settings.zammad_url}/api/v1/ticket_articles", json=payload)
+    if not resp.ok:
+        logger.error("reply_to_ticket failed for #%s: %s %s", ticket_id, resp.status_code, resp.text)
+        return False
+
+    if close:
+        return update_ticket(ticket_id, note=None, close=True)
+    return True
+
+
+def update_ticket(ticket_id: int, note: str | None, close: bool = False, group: str | None = None) -> bool:
+    if note:
+        _session.post(
+            f"{settings.zammad_url}/api/v1/ticket_articles",
+            json={"ticket_id": ticket_id, "body": note, "internal": True},
+        )
+
+    payload = {}
     if close:
         payload["state_id"] = 4
     if group:
         payload["group"] = group
 
-    try:
-        response = requests.put(url, headers=HEADERS, json=payload, timeout=15)
-        response.raise_for_status()
-        logger.info("Ticket #%s updated (close=%s, group=%s).", ticket_id, close, group)
+    if not payload:
         return True
-    except requests.RequestException:
-        logger.exception("Failed to update ticket #%s", ticket_id)
+
+    resp = _session.put(f"{settings.zammad_url}/api/v1/tickets/{ticket_id}", json=payload)
+    if not resp.ok:
+        logger.error("update_ticket failed for #%s: %s %s", ticket_id, resp.status_code, resp.text)
         return False
+    return True
 
 
 def tag_ticket(ticket_id: int, tag: str) -> bool:
-    url = f"{settings.zammad_url}/api/v1/tags/add"
-    payload = {"object": "Ticket", "o_id": ticket_id, "item": tag}
-
-    try:
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=15)
-        response.raise_for_status()
-        logger.info("Tagged ticket #%s with '%s'.", ticket_id, tag)
-        return True
-    except requests.RequestException:
-        logger.exception("Failed to tag ticket #%s with '%s'", ticket_id, tag)
+    resp = _session.post(
+        f"{settings.zammad_url}/api/v1/tags/add",
+        json={"object": "Ticket", "o_id": ticket_id, "item": tag},
+    )
+    if not resp.ok:
+        logger.error("tag_ticket failed for #%s: %s %s", ticket_id, resp.status_code, resp.text)
         return False
+    return True
 
 
 def create_ticket(title: str, group: str, customer_id: str, body: str) -> dict | None:
-    url = f"{settings.zammad_url}/api/v1/tickets"
     payload = {
         "title": title,
         "group": group,
@@ -81,61 +106,8 @@ def create_ticket(title: str, group: str, customer_id: str, body: str) -> dict |
             "internal": True,
         },
     }
-
-    try:
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        logger.info("Created ticket #%s: %s", data.get("number"), title)
-        return data
-    except requests.RequestException:
-        logger.exception("Failed to create ticket: %s", title)
+    resp = _session.post(f"{settings.zammad_url}/api/v1/tickets", json=payload)
+    if not resp.ok:
+        logger.error("create_ticket failed: %s %s %s", title, resp.status_code, resp.text)
         return None
-
-def get_ticket_with_articles(ticket_id: int) -> dict | None:
-    """
-    Fetches full ticket detail including its articles (needed to get
-    the actual customer message body, not just the title).
-    """
-    url = f"{settings.zammad_url}/api/v1/tickets/{ticket_id}"
-    params = {"expand": "true"}  # includes articles in response
-    try:
-        response = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException:
-        logger.exception("Failed to fetch ticket #%s with articles", ticket_id)
-        return None
-
-
-def get_first_article_body(ticket_id: int) -> str:
-    """
-    Convenience: pulls the first (usually the opening customer message)
-    article body as plain-ish text for feeding to the AI model.
-    """
-    ticket = get_ticket_with_articles(ticket_id)
-    if not ticket:
-        return ""
-    articles = ticket.get("articles", [])
-    if not articles:
-        return ""
-    return articles[0].get("body", "")
-
-def reply_to_ticket(ticket_id: int, message: str, close: bool = False) -> bool:
-    """
-    Posts a PUBLIC (customer-visible) reply to a ticket.
-    Distinct from update_ticket() which always posts internal notes.
-    """
-    url = f"{settings.zammad_url}/api/v1/tickets/{ticket_id}"
-    payload = {"article": {"body": message, "internal": False}}
-    if close:
-        payload["state_id"] = 4
-
-    try:
-        response = requests.put(url, headers=HEADERS, json=payload, timeout=15)
-        response.raise_for_status()
-        logger.info("Public reply posted to ticket #%s (close=%s).", ticket_id, close)
-        return True
-    except requests.RequestException:
-        logger.exception("Failed to post public reply to ticket #%s", ticket_id)
-        return False
+    return resp.json()
