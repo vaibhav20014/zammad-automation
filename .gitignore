@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 *.pyd
 .env
+logs/
+state/kb_vectors.json
+state/decision_log.jsonl
+terraform/**/.terraform/
+terraform/**/*.tfstate
+terraform/**/*.tfstate.*
+terraform/**/*.tfplan

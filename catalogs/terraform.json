@@ -1,0 +1,45 @@
+{
+  "modules": [
+    {
+      "id": "aws_vm",
+      "name": "AWS EC2 VM from vCPU and RAM",
+      "path": "modules/aws_vm",
+      "auto_apply": false,
+      "keywords": [
+        "aws",
+        "ec2",
+        "virtual machine",
+        "vm",
+        "vcpu",
+        "ram",
+        "provision instance"
+      ],
+      "allowed_sizes": [
+        {"vcpu": 2, "memory_gb": 2, "instance_type": "t3.small"},
+        {"vcpu": 2, "memory_gb": 4, "instance_type": "t3.medium"},
+        {"vcpu": 2, "memory_gb": 8, "instance_type": "t3.large"}
+      ]
+    },
+    {
+      "id": "webapp_stack",
+      "name": "Full-stack web app provisioning",
+      "path": "modules/webapp",
+      "auto_apply": false,
+      "keywords": ["provision web", "new web app", "web stack", "full-stack"]
+    },
+    {
+      "id": "analytics_stack",
+      "name": "Data analytics platform stack",
+      "path": "modules/analytics",
+      "auto_apply": false,
+      "keywords": ["analytics", "data platform", "warehouse"]
+    },
+    {
+      "id": "network_sg",
+      "name": "Security group and network configuration",
+      "path": "modules/network",
+      "auto_apply": false,
+      "keywords": ["security group", "vpc", "firewall", "network acl"]
+    }
+  ]
+}

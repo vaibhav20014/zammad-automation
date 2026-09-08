@@ -1,0 +1,24 @@
+{
+  "default_level": "l2",
+  "groups": {
+    "l1": "L1-Support",
+    "l2": "L2-Support",
+    "l3": "L3-Support"
+  },
+  "l1_keywords": [
+    "how to",
+    "password",
+    "login",
+    "access request",
+    "reset"
+  ],
+  "l3_keywords": [
+    "vendor",
+    "license",
+    "ransomware",
+    "legal",
+    "0-day",
+    "zero-day",
+    "data breach"
+  ]
+}

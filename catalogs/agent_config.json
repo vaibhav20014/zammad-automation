@@ -1,0 +1,6 @@
+{
+  "name": "AI-Powered Ticket Agent & Router",
+  "max_tool_iterations": 8,
+  "holding_reply": "Thank you for contacting us. We are currently looking into this and will follow up with you shortly.",
+  "vector_top_k": 8
+}

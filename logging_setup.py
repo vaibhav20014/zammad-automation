@@ -1,57 +1,58 @@
 """
-Rotating file + console logging setup. Calls load_dotenv() directly
-(not relying on import order) since config.py being imported first
-isn't guaranteed - this was the fix for the .env-not-loaded-before-
-logging-reads-it bug from the original build.
+Central logging configuration.
+
+Import `configure_logging()` once from each entrypoint script
+(run_ticket_agent.py, run_zabbix_agent.py). Every other module just does:
+
+    import logging
+    logger = logging.getLogger(__name__)
+
+and gets timestamps, levels, and rotation for free.
 """
 
-import io
 import logging
+import logging.handlers
 import os
-import sys
-from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
-LOG_DIR = os.getenv("LOG_DIR", os.path.join(os.getcwd(), "logs"))
+_PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(_PROJECT_ROOT / ".env")
+LOG_DIR = os.getenv("LOG_DIR", str(_PROJECT_ROOT / "logs"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
-_configured = False
+_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 
 def configure_logging(log_filename: str) -> None:
-    global _configured
-    if _configured:
-        return
+    """
+    Call once per process, from the entrypoint script only.
 
+    log_filename: e.g. "ansible_agent.log" or "zabbix_agent.log"
+    Keeps logs separate per agent so they don't interleave in one file.
+    """
     os.makedirs(LOG_DIR, exist_ok=True)
     log_path = os.path.join(LOG_DIR, log_filename)
 
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    root = logging.getLogger()
+    root.setLevel(LOG_LEVEL)
 
-    file_handler = RotatingFileHandler(
-        log_path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    # Avoid duplicate handlers if configure_logging() gets called twice
+    if root.handlers:
+        return
+
+    formatter = logging.Formatter(_LOG_FORMAT)
+
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=5 * 1024 * 1024, backupCount=5
     )
     file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
 
-    # UTF-8 reconfiguration + backslashreplace fallback for Windows console
-    # logging crashes on emoji/unicode in ticket text (original bug fix)
-    stream = sys.stdout
-    if hasattr(stream, "reconfigure"):
-        stream.reconfigure(encoding="utf-8", errors="backslashreplace")
-    else:
-        stream = io.TextIOWrapper(
-            stream.buffer, encoding="utf-8", errors="backslashreplace"
-        )
-    console_handler = logging.StreamHandler(stream)
+    console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    root.addHandler(console_handler)
 
-    root_logger = logging.getLogger()
-    root_logger.setLevel(LOG_LEVEL)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-
-    _configured = True
+    logging.getLogger(__name__).info(
+        "Logging configured. level=%s file=%s", LOG_LEVEL, log_path
+    )

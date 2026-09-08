@@ -1,0 +1,28 @@
+{
+  "playbooks": [
+    {
+      "id": "disk_cleanup",
+      "name": "OS disk space cleanup",
+      "playbook": "check_and_clean_disk.yml",
+      "requires_host": true,
+      "success_markers": ["below threshold"],
+      "keywords": ["disk", "filesystem", "inode", "disk space", "df "]
+    },
+    {
+      "id": "app_config",
+      "name": "Application configuration change",
+      "playbook": "app_config.yml",
+      "requires_host": true,
+      "success_markers": ["configuration applied", "changed=", "failed=0"],
+      "keywords": ["nginx", "apache", "app config", "application configuration"]
+    },
+    {
+      "id": "system_patch",
+      "name": "System patch and update",
+      "playbook": "system_patch.yml",
+      "requires_host": true,
+      "success_markers": ["updated", "nothing to do", "failed=0"],
+      "keywords": ["patch", "yum update", "apt upgrade", "cve", "security update"]
+    }
+  ]
+}

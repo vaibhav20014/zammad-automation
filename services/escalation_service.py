@@ -1,21 +1,33 @@
-"""
-L2 escalation. Shared terminal outcome for both the disk and KB paths
-when neither can resolve the ticket.
-"""
+"""Escalation rule engine: L1 review, L2 engineering, L3 vendor/expert."""
 
-import logging
-from clients import zammad_client
+from catalogs import loader
 from config import settings
 
-logger = logging.getLogger(__name__)
+
+def group_for_level(level: str) -> str:
+    rules = loader.escalation_rules()
+    key = (level or "").lower().replace("escalate_", "")
+    return rules["groups"].get(key, settings.l2_group_name)
 
 
-def handle(ticket_id: int, ticket_number: str, reason: str) -> dict:
-    zammad_client.update_ticket(
-        ticket_id,
-        f"Automation: escalating to L2. Reason: {reason}",
-        close=False,
-        group=settings.l2_group_name,
-    )
-    logger.warning("Ticket #%s escalated to L2: %s", ticket_number, reason)
-    return {"resolved": True, "reason": reason}
+def infer_level(ticket_text: str, default: str | None = None) -> str:
+    rules = loader.escalation_rules()
+    text = (ticket_text or "").lower()
+    if any(k in text for k in rules["l3_keywords"]):
+        return "l3"
+    if any(k in text for k in rules["l1_keywords"]):
+        return "l1"
+    return default or rules["default_level"]
+
+
+def normalize_action(action: str, ticket_text: str) -> str:
+    raw = (action or "").strip().lower()
+    if raw in {"escalate_l1", "escalate_l2", "escalate_l3"}:
+        return raw
+    if raw in {"l1", "escalate"}:
+        return "escalate_l1" if raw == "l1" else f"escalate_{infer_level(ticket_text)}"
+    if raw in {"l2"}:
+        return "escalate_l2"
+    if raw in {"l3"}:
+        return "escalate_l3"
+    return f"escalate_{infer_level(ticket_text)}"
