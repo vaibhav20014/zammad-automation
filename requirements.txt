@@ -4,5 +4,8 @@ google-genai>=0.1.0
 langchain>=1.0.0
 langchain-google-genai>=0.1.0
 crewai>=0.1.0
+crewai_tools>=0.1.0
+mcp>=0.1.0
+
 
 
