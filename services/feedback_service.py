@@ -44,6 +44,8 @@ def record_decision(
         "ansible_host": decision.get("ansible_host"),
         "ansible_playbook_id": decision.get("ansible_playbook_id"),
         "terraform_module_id": decision.get("terraform_module_id"),
+        "terraform_instance_type": decision.get("terraform_instance_type"),   # ADD
+        "terraform_vm_name": decision.get("terraform_vm_name"),               # ADD
         "zabbix_event_id": extract_event_id(ticket_text),
     }
     try:

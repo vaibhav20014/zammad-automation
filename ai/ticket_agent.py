@@ -127,6 +127,7 @@ _TOOLS = types.Tool(function_declarations=[
             },
             "required": ["module_id"],
         },
+
     ),
     types.FunctionDeclaration(
         name="submit_final_response",
@@ -248,6 +249,7 @@ def _base_safe(decision: dict) -> dict:
         "ansible_playbook_id": (decision.get("ansible_playbook_id") or "").strip(),
         "terraform_module_id": (decision.get("terraform_module_id") or "").strip(),
         "terraform_instance_type": (decision.get("terraform_instance_type") or "").strip(),
+        "terraform_vm_name": (decision.get("terraform_vm_name") or "").strip(),
         "confidence": decision.get("confidence") or "low",
         "reasoning": (decision.get("reasoning") or "").strip(),
     }
@@ -339,6 +341,7 @@ def _enforce_rails(decision: dict, session: dict, ticket_text: str) -> dict:
             safe["terraform_instance_type"] = (
                 run.get("instance_type") or safe.get("terraform_instance_type") or ""
             )
+            safe["terraform_vm_name"] = run.get("vm_name") or safe.get("terraform_vm_name") or "" 
             if not safe["internal_note"] or "plan" not in safe["internal_note"].lower():
                 size = safe["terraform_instance_type"] or "catalog size"
                 plan_tail = (run.get("plan_stdout") or "")[-1500:]
@@ -556,6 +559,7 @@ def _execute_tool_call(
         )
         result["module_id"] = module["id"]
         result["instance_type"] = tf_vars.get("instance_type", "")
+        result["vm_name"] = tf_vars.get("vm_name", "")  
         session["terraform_runs"][module["id"]] = result
         return result
 

@@ -106,6 +106,38 @@ def run_module(
     result.pop("error", None)
     return result
 
+def apply_module(module_rel_path: str, tf_vars: dict | None = None) -> dict:
+    """Apply a module directly. Only call this after explicit human approval
+    (e.g. a ticket tagged approved-for-apply) — it bypasses the AI-path's
+    auto_apply gate on purpose, since the approval tag *is* the gate here.
+    """
+    module_dir = Path(settings.terraform_dir) / module_rel_path
+    if not module_dir.is_dir():
+        return {"ok": False, "applied": False, "error": f"Terraform module directory not found: {module_dir}"}
+
+    var_args = _var_args(tf_vars or {})
+    init = _run(["init", "-input=false", "-no-color"], module_dir)
+    if init["returncode"] != 0:
+        return {"ok": False, "applied": False, "error": "terraform init failed", "stderr": init["stderr"][-2000:]}
+
+    apply = _run(["apply", "-input=false", "-auto-approve", "-no-color", *var_args], module_dir)
+    if apply["returncode"] != 0:
+        return {"ok": False, "applied": False, "error": "terraform apply failed",
+                "stderr": apply["stderr"][-2000:], "stdout": apply["stdout"][-4000:]}
+
+    return {"ok": True, "applied": True, "apply_stdout": apply["stdout"][-4000:],
+            "outputs": get_outputs(module_dir)}
+
+
+def get_outputs(module_dir: Path) -> dict:
+    result = _run(["output", "-json", "-no-color"], module_dir)
+    if result["returncode"] != 0:
+        return {}
+    try:
+        import json
+        return json.loads(result["stdout"])
+    except (ValueError, KeyError):
+        return {}
 
 def _var_args(tf_vars: dict) -> list[str]:
     args = []
