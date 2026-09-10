@@ -211,6 +211,20 @@ def get_first_article_body(ticket_id: int) -> str:
     """
     return get_ticket_text(ticket_id)
 
+def get_latest_customer_reply(ticket_id: int) -> str:
+    """
+    Returns the most recent article that looks like it actually came from
+    the customer (type=='email'), as opposed to our own posted replies
+    (which are always posted as type=='note').
+    """
+    articles = get_ticket_articles(ticket_id)
+    for article in reversed(articles):
+        if not isinstance(article, dict):
+            continue
+        if article.get("type") == "email":
+            return (article.get("body") or "").strip()
+    return ""
+
 
 def reply_to_ticket(ticket_id: int, message: str, close: bool = False) -> bool:
     """
