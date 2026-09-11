@@ -43,8 +43,9 @@ class Settings:
     # Logging
     log_dir: str
 
-    # Gemini
-    google_api_key: str
+    # Vertex AI / model
+    vertexai_project: str
+    vertexai_location: str
     model: str
 
 
@@ -53,6 +54,13 @@ def _require(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
+
+
+# GOOGLE_APPLICATION_CREDENTIALS needs to be a real env var before
+# litellm/google-auth libraries initialize, since they read it
+# directly from os.environ, not through our own settings object.
+if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 
 def load_settings() -> Settings:
@@ -78,8 +86,9 @@ def load_settings() -> Settings:
             "/home/ubuntu/zammad-automation/processed_zabbix_events.json",
         ),
         log_dir=os.getenv("LOG_DIR", os.path.join(os.getcwd(), "logs")),
-        google_api_key=_require("GOOGLE_API_KEY"),
-        model=os.getenv("KB_ANSWER_MODEL", "gemini-2.5-flash")
+        vertexai_project=_require("VERTEXAI_PROJECT"),
+        vertexai_location=os.getenv("VERTEXAI_LOCATION", "global"),
+        model=os.getenv("MODEL", "vertex_ai/gemini-2.5-pro"),
     )
 
 

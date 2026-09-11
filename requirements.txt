@@ -6,6 +6,7 @@ langchain-google-genai>=0.1.0
 crewai>=0.1.0
 crewai_tools>=0.1.0
 mcp>=0.1.0
-
+litellm[vertex_ai]>=1.50.0
+google-cloud-aiplatform>=1.60.0
 
 

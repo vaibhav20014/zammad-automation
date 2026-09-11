@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 *.pyd
 .env
+application_default_credentials.json
+litellm[vertex_ai]>=1.50.0
+google-cloud-aiplatform>=1.60.0
+logs/

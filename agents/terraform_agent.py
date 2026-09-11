@@ -1,12 +1,12 @@
 """
-Terraform specialist - plan/apply/state operations via MCP tools.
+Terraform specialist - plan/apply/state operations via tools.
 Apply-type operations should be gated (guardrail or human_input) at the
 Task level in crew/ticket_crew.py, not here - this agent just executes
 what it's given.
 """
 
 from crewai import Agent
-from tools import terraform_tools
+# from tools 
 from config import settings
 
 ROLE = "Terraform infrastructure specialist"
@@ -25,7 +25,7 @@ def build_terraform_agent() -> Agent:
         role=ROLE,
         goal=GOAL,
         backstory=BACKSTORY,
-        tools=terraform_tools.get_tools(),
+        # tools=terraform_tools.get_tools(),
         llm=settings.model,
         verbose=False,
     )
