@@ -52,7 +52,10 @@ def stage_propose() -> None:
     for module in loader.terraform_modules():
         if not module.get("allowed_sizes"):
             continue
-        keyword_query = " OR ".join(f'title:*{kw}*' for kw in module.get("keywords") or [])
+        single_word_keywords = [kw for kw in (module.get("keywords") or []) if " " not in kw]
+        if not single_word_keywords:
+            continue
+        keyword_query = " OR ".join(f'title:*{kw}*' for kw in single_word_keywords)
         query = (
             f"({keyword_query}) AND state.name:(new OR open) "
             f"AND NOT tags:{PAUSE_TAG} AND NOT tags:{AWAITING_TAG}"
