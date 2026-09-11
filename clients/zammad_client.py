@@ -213,18 +213,19 @@ def get_first_article_body(ticket_id: int) -> str:
 
 def get_latest_customer_reply(ticket_id: int) -> str:
     """
-    Returns the most recent article that looks like it actually came from
-    the customer (type=='email'), as opposed to our own posted replies
-    (which are always posted as type=='note').
+    Returns the most recent PUBLIC (non-internal) article on the ticket.
+    Assumes anything public and not our own automation-posted confirmation
+    text is the customer's response.
     """
     articles = get_ticket_articles(ticket_id)
     for article in reversed(articles):
         if not isinstance(article, dict):
             continue
-        if article.get("type") == "email":
-            return (article.get("body") or "").strip()
+        if article.get("internal") is False:
+            body = (article.get("body") or "").strip()
+            if "We understood your request as" not in body:
+                return body
     return ""
-
 
 def reply_to_ticket(ticket_id: int, message: str, close: bool = False) -> bool:
     """
