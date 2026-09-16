@@ -26,6 +26,12 @@ def search_tickets(query: str, limit: int = 20) -> list[dict]:
 
 
 def get_ticket_with_articles(ticket_id: int) -> dict:
+    """
+    Fetches the ticket's own top-level fields (state, group, etc.).
+    NOTE: despite the name, this does NOT reliably return article
+    bodies - expand=true expands relational fields, not article
+    content. Use get_ticket_articles() for article data.
+    """
     resp = _session.get(
         f"{settings.zammad_url}/api/v1/tickets/{ticket_id}",
         params={"expand": "true"},
@@ -34,12 +40,49 @@ def get_ticket_with_articles(ticket_id: int) -> dict:
     return resp.json()
 
 
+def get_ticket_articles(ticket_id: int) -> list[dict]:
+    """
+    Fetches the actual list of articles for a ticket via Zammad's
+    dedicated articles endpoint.
+    """
+    resp = _session.get(f"{settings.zammad_url}/api/v1/ticket_articles/by_ticket/{ticket_id}")
+    resp.raise_for_status()
+    articles = resp.json()
+    logger.debug(
+        "get_ticket_articles(%s): got %d article(s). Details: %s",
+        ticket_id,
+        len(articles),
+        [
+            {
+                "created_by_id": a.get("created_by_id"),
+                "from": a.get("from"),
+                "created_at": a.get("created_at"),
+                "body_preview": (a.get("body") or "")[:80],
+            }
+            for a in articles
+        ],
+    )
+    return articles
+
+
 def get_first_article_body(ticket_id: int) -> str | None:
-    ticket = get_ticket_with_articles(ticket_id)
-    articles = ticket.get("articles", [])
+    articles = get_ticket_articles(ticket_id)
     if not articles:
         return None
     return articles[0].get("body")
+
+
+def get_full_ticket_text(ticket_id: int) -> str:
+    articles = get_ticket_articles(ticket_id)
+    parts = []
+    for article in articles:
+        body = (article.get("body") or "").strip()
+        if not body:
+            continue
+        sender = article.get("from") or "Unknown"
+        created_at = article.get("created_at", "")
+        parts.append(f"[{created_at}] {sender}:\n{body}")
+    return "\n\n---\n\n".join(parts)
 
 
 def reply_to_ticket(ticket_id: int, text: str, close: bool = False) -> bool:
@@ -111,3 +154,16 @@ def create_ticket(title: str, group: str, customer_id: str, body: str) -> dict |
         logger.error("create_ticket failed: %s %s %s", title, resp.status_code, resp.text)
         return None
     return resp.json()
+
+
+def get_current_user_id() -> int | None:
+    """
+    Returns the Zammad user id this API token belongs to (our
+    automation account). Used to tell our own replies apart from
+    customer replies on a ticket.
+    """
+    resp = _session.get(f"{settings.zammad_url}/api/v1/users/me")
+    if not resp.ok:
+        logger.error("get_current_user_id failed: %s %s", resp.status_code, resp.text)
+        return None
+    return resp.json().get("id")
