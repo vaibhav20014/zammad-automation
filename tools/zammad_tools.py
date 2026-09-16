@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 AWAITING_REPLY_TAG = "awaiting-customer-reply"
 AUTOMATION_DONE_TAG = "automation-processed"
-
+SPAM_TAG = "automation-spam"
 
 @tool("ask_for_more_details")
 def ask_for_more_details(ticket_id: int, question: str) -> str:
@@ -48,5 +48,19 @@ def post_kb_answer(ticket_id: int, answer_text: str, close: bool) -> str:
     return f"Ticket #{ticket_id}: FAILED to post answer - do not assume it was received."
 
 
+@tool("tag_as_spam")
+def tag_as_spam(ticket_id: int) -> str:
+    """
+    Tags the ticket as spam.
+    """
+    logger.info("tag_as_spam CALLED for ticket #%s", ticket_id)
+    success = zammad_client.tag_ticket(ticket_id, SPAM_TAG)
+    if success:
+        logger.info("tag_as_spam SUCCEEDED for ticket #%s", ticket_id)
+        return f"Ticket #{ticket_id}: tagged as spam."
+    logger.error("tag_as_spam FAILED for ticket #%s", ticket_id)
+    return f"Ticket #{ticket_id}: FAILED to tag as spam."
+
+
 def get_tools() -> list:
-    return [ask_for_more_details, post_kb_answer]
+    return [ask_for_more_details, post_kb_answer, tag_as_spam]

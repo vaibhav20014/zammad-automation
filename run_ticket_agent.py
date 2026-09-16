@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 from clients import zammad_client                                     # noqa: E402
 from crew import ticket_crew                                           # noqa: E402
-from tools.zammad_tools import AWAITING_REPLY_TAG, AUTOMATION_DONE_TAG  # noqa: E402
+from tools.zammad_tools import AWAITING_REPLY_TAG, AUTOMATION_DONE_TAG, SPAM_TAG  # noqa: E402
 
 _OUR_USER_ID = None
 
 
 def find_new_tickets() -> list[dict]:
-    query = f'state.name:(new OR open) AND NOT tags:{AUTOMATION_DONE_TAG} AND NOT tags:{AWAITING_REPLY_TAG}'
+    query = f'state.name:(new OR open) AND NOT tags:{AUTOMATION_DONE_TAG} AND NOT tags:{AWAITING_REPLY_TAG} AND NOT tags:{SPAM_TAG}'
     return zammad_client.search_tickets(query, limit=20)
 
 
