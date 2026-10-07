@@ -1,36 +1,29 @@
 """
 Linux Ansible tools: connection config and tool definitions, self-contained in one file.
 
-Run standalone to serve tools: python tools/linux/ansible_tools.py
-
 Tools use Ansible ad-hoc mode (not a playbook) via subprocess, so new
 one-off maintenance operations can be added here without needing a
 matching .yml file first. Read-only "check_"/"find_" tools are kept
 separate from action-taking ones so the agent (and logs) can see what's
-wrong before anything changes - action tools can be gated with
-human_input later without touching the diagnostic ones.
+wrong before anything changes, and so the same read-only tool can be
+called again AFTER an action to verify it worked - e.g. call
+find_zombie_processes_linux again after kill_zombie_processes_linux to
+confirm cleanup succeeded, rather than trusting the action tool's own
+self-report.
 """
 
 import os
 import subprocess
 import sys
 
-# tools/linux/ansible_tools.py -> project root is two levels up
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 
 from config import settings
 from clients import ansible_client
 from crewai.tools import tool
 
 
-
 def _run_adhoc(target_host: str, module: str, module_args: str, become: bool = False) -> str:
-    """
-    Runs `ansible <host> -m <module> -a "<args>"` against the inventory,
-    same pattern as ansible_client.run_disk_check() but for one-off
-    ad-hoc commands rather than a playbook.
-    """
     cmd = [
         "ansible", target_host,
         "-i", settings.inventory_path,
@@ -55,7 +48,7 @@ def _run_adhoc(target_host: str, module: str, module_args: str, become: bool = F
 
 # --- Disk ---------------------------------------------------------------
 
-@tool
+@tool("check_disk_usage")
 def check_disk_usage(target_host: str) -> str:
     """
     Runs the disk-check-and-clean Ansible playbook against target_host
@@ -66,29 +59,30 @@ def check_disk_usage(target_host: str) -> str:
         return f"Ansible run against {target_host} failed or returned no output."
 
     for play in output.get("plays", []):
-        for task in play.get("tasks", []):
-            task_result = task.get("hosts", {}).get(target_host, {})
+        for t in play.get("tasks", []):
+            task_result = t.get("hosts", {}).get(target_host, {})
             if "msg" in task_result:
                 return f"{target_host}: {task_result['msg']}"
 
     return f"Ansible run against {target_host} completed but produced no readable message."
 
 
-@tool
+@tool("run_playbook")
 def run_playbook(target_host: str) -> str:
     """
     Alias of check_disk_usage, kept as a separate tool name in case the
     router/specialist agent's prompts already reference this name.
     """
-    return check_disk_usage(target_host)
+    return check_disk_usage.func(target_host)
 
 
-@tool
+@tool("find_large_files_linux")
 def find_large_files_linux(target_host: str, search_path: str = "/", top_n: int = 10) -> str:
     """
-    Reports the top_n largest files under search_path. Read-only -
-    useful to run before clean_temp_files_linux or rotate_logs_linux to
-    see what's actually taking up space.
+    Reports the top_n largest files under search_path. Read-only - use
+    before clean_temp_files_linux to see what's taking up space, and
+    again after with search_path="/tmp" (or /var/tmp) to verify the
+    cleanup actually reduced what's there.
     """
     cmd = (
         f"find {search_path} -xdev -type f -printf '%s %p\\n' 2>/dev/null "
@@ -103,7 +97,7 @@ def find_large_files_linux(target_host: str, search_path: str = "/", top_n: int 
 
 # --- Log & temp cleanup --------------------------------------------------
 
-@tool
+@tool("clean_temp_files_linux")
 def clean_temp_files_linux(target_host: str, older_than_days: int = 7) -> str:
     """
     Deletes files in /tmp and /var/tmp older than older_than_days.
@@ -117,13 +111,13 @@ def clean_temp_files_linux(target_host: str, older_than_days: int = 7) -> str:
     return f"{target_host}: removed {count} file(s) older than {older_than_days} day(s) from /tmp and /var/tmp."
 
 
-@tool
+@tool("rotate_logs_linux")
 def rotate_logs_linux(target_host: str) -> str:
     """
     Forces an immediate logrotate run using the host's existing
     logrotate config (/etc/logrotate.conf), rather than truncating logs
-    directly - this respects whatever rotation/compression/retention
-    rules are already configured on the host instead of overriding them.
+    directly. Call check_log_rotation_status_linux afterward to verify
+    it actually ran and rotated files.
     """
     cmd = "logrotate -f /etc/logrotate.conf"
     output = _run_adhoc(target_host, "shell", cmd, become=True)
@@ -132,15 +126,31 @@ def rotate_logs_linux(target_host: str) -> str:
     return f"{target_host} logrotate output:\n{output}"
 
 
+@tool("check_log_rotation_status_linux")
+def check_log_rotation_status_linux(target_host: str) -> str:
+    """
+    Reports when logrotate last actually ran and rotated each log, by
+    reading logrotate's own status file. Read-only - use after calling
+    rotate_logs_linux to verify it took effect, since rotate_logs_linux
+    can exit cleanly without actually rotating anything if nothing met
+    its size/age thresholds.
+    """
+    cmd = "cat /var/lib/logrotate/status 2>/dev/null || cat /var/lib/logrotate.status 2>/dev/null"
+    output = _run_adhoc(target_host, "shell", cmd)
+    if not output.strip():
+        return f"{target_host}: could not read logrotate status file (path may differ on this distro)."
+    return f"{target_host} logrotate status:\n{output}"
+
+
 # --- Zombie processes ------------------------------------------------------
 
-@tool
+@tool("find_zombie_processes_linux")
 def find_zombie_processes_linux(target_host: str) -> str:
     """
     Reports zombie (defunct) processes on a Linux host: PID, parent PID,
-    and status. Read-only - does not attempt to fix anything. Use
-    kill_zombie_processes_linux to attempt cleanup once you've reviewed
-    what this reports.
+    and status. Read-only - call this both BEFORE kill_zombie_processes_linux
+    (to see what's wrong) and AFTER it (to verify the fix actually worked),
+    rather than trusting kill_zombie_processes_linux's own report alone.
     """
     cmd = "ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/ {print $0}'"
     output = _run_adhoc(target_host, "shell", cmd)
@@ -148,7 +158,8 @@ def find_zombie_processes_linux(target_host: str) -> str:
         return f"{target_host}: no zombie processes found."
     return f"{target_host} zombie processes (pid ppid stat comm):\n{output}"
 
-@tool
+
+@tool("kill_zombie_processes_linux")
 def kill_zombie_processes_linux(target_host: str) -> str:
     """
     Attempts to clear zombie processes on a Linux host. A zombie is
@@ -156,9 +167,10 @@ def kill_zombie_processes_linux(target_host: str) -> str:
     to each zombie's parent PID as a best-effort nudge to make the
     parent reap it. If zombies persist after this, the parent process
     itself likely needs to be restarted, which this tool deliberately
-    does NOT do on its own.
+    does NOT do on its own. Call find_zombie_processes_linux again
+    after this to independently confirm the result.
     """
-    zombies = find_zombie_processes_linux(target_host)
+    zombies = find_zombie_processes_linux.func(target_host)
     if "no zombie processes found" in zombies:
         return zombies
 
@@ -179,13 +191,14 @@ def kill_zombie_processes_linux(target_host: str) -> str:
 
 # --- Patching --------------------------------------------------------------
 
-@tool
+@tool("patch_os_linux")
 def patch_os_linux(target_host: str) -> str:
     """
     Applies available OS security/package updates on a Linux host.
     Detects apt (Debian/Ubuntu) vs yum/dnf (RHEL/CentOS) automatically.
-    This is a real system-changing operation - review the output and
-    confirm before treating a ticket as resolved based on this alone.
+    Call check_pending_updates_linux afterward to verify updates were
+    actually applied, since a partial/interrupted run can exit without
+    a clear error.
     """
     detect_cmd = "command -v apt-get || command -v dnf || command -v yum"
     pkg_manager_path = _run_adhoc(target_host, "shell", detect_cmd)
@@ -202,6 +215,32 @@ def patch_os_linux(target_host: str) -> str:
     output = _run_adhoc(target_host, "shell", update_cmd, become=True)
     return f"{target_host} patch run output:\n{output}"
 
+
+@tool("check_pending_updates_linux")
+def check_pending_updates_linux(target_host: str) -> str:
+    """
+    Reports how many package updates are still pending. Read-only -
+    call BEFORE patch_os_linux to see what's outstanding, and AFTER to
+    confirm the patch run actually applied them (should report 0
+    pending, or close to it, afterward).
+    """
+    detect_cmd = "command -v apt-get || command -v dnf || command -v yum"
+    pkg_manager_path = _run_adhoc(target_host, "shell", detect_cmd)
+
+    if "apt-get" in pkg_manager_path:
+        check_cmd = "apt list --upgradable 2>/dev/null | grep -v '^Listing' | wc -l"
+    elif "dnf" in pkg_manager_path:
+        check_cmd = "dnf check-update --quiet | grep -c '^[a-zA-Z]'"
+    elif "yum" in pkg_manager_path:
+        check_cmd = "yum check-update --quiet | grep -c '^[a-zA-Z]'"
+    else:
+        return f"{target_host}: could not detect a supported package manager (apt/dnf/yum)."
+
+    output = _run_adhoc(target_host, "shell", check_cmd)
+    count = output.strip() or "0"
+    return f"{target_host}: {count} package update(s) pending."
+
+
 def get_tools() -> list:
     """Returns the tool list for the Ansible agent's `tools=` field."""
     return [
@@ -210,7 +249,9 @@ def get_tools() -> list:
         find_large_files_linux,
         clean_temp_files_linux,
         rotate_logs_linux,
+        check_log_rotation_status_linux,
         find_zombie_processes_linux,
         kill_zombie_processes_linux,
         patch_os_linux,
+        check_pending_updates_linux,
     ]

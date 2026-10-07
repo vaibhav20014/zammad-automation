@@ -20,6 +20,7 @@ from agents.router_agent import build_router_agent
 from agents.ansible_agent import build_ansible_agent
 from agents.kb_agent import build_kb_agent
 from agents.escalation_agent import build_escalation_agent
+from agents.classification_agent import build_spam_agent
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +32,16 @@ _escalation = None
 
 
 def build_crew():
-    global _crew, _router, _ansible, _kb, _escalation
+    global _crew, _router, _ansible, _kb, _escalation, _spam
 
     _router = build_router_agent()
     _ansible = build_ansible_agent()
     _kb = build_kb_agent()
     _escalation = build_escalation_agent()
+    _spam = build_spam_agent()
 
     _crew = Crew(
-        agents=[_ansible, _kb, _escalation],
+        agents=[_ansible, _kb, _escalation, _spam],
         tasks=[],
         process=Process.hierarchical,
         manager_agent=_router,
@@ -58,13 +60,17 @@ def route_ticket(ticket: dict, ticket_text: str) -> dict:
         f"Title: {ticket.get('title', '')}\n"
         f"Body: {ticket_text}\n\n"
         "Decide which specialist's domain this ticket falls under "
-        "(Ansible operations, Knowledge Base question, or something else) "
-        "and delegate to that specialist, even if the ticket is missing "
-        "details like a hostname - that specialist has its own tool to "
-        "ask the customer for whatever's missing, so let them handle it "
-        "rather than deciding on their behalf. Pass ticket_id and "
-        "ticket_number exactly as given to whichever tool ends up being "
-        "called.\n\n"
+        "(Ansible operations, Knowledge Base question, spam, or "
+        "something else) and delegate to that specialist, even if the "
+        "ticket is missing details like a hostname - that specialist "
+        "has its own tool to ask the customer for whatever's missing, "
+        "so let them handle it rather than deciding on their behalf. "
+        "Pass ticket_id and ticket_number exactly as given to whichever "
+        "tool ends up being called.\n\n"
+        "If the ticket is clearly spam, unsolicited advertising, or "
+        "has no genuine support request in it, delegate to the spam "
+        "classification specialist instead of any operational "
+        "specialist.\n\n"
         "Only delegate directly to the escalation specialist yourself if "
         "the ticket clearly doesn't fit any specialist's domain at all "
         "(e.g. a billing question, a non-technical request), or if a "

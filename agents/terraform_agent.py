@@ -6,7 +6,9 @@ what it's given.
 """
 
 from crewai import Agent
-# from tools 
+from tools.terraform.aws.terraform_aws_tools import get_tools as aws_tools
+from tools.terraform.azure.terraform_azure_tools import get_tools as azure_tools
+from tools.zammad_tools import get_tools as zammad_tools
 from config import settings
 
 ROLE = "Terraform infrastructure specialist"
@@ -19,13 +21,14 @@ BACKSTORY = (
     "applying anything."
 )
 
+terraform_tools = aws_tools() + azure_tools() + zammad_tools()
 
 def build_terraform_agent() -> Agent:
     return Agent(
         role=ROLE,
         goal=GOAL,
         backstory=BACKSTORY,
-        # tools=terraform_tools.get_tools(),
+        tools=terraform_tools(),
         llm=settings.model,
         verbose=False,
     )
