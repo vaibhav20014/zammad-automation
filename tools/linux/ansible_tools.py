@@ -23,25 +23,38 @@ from clients import ansible_client
 from crewai.tools import tool
 
 
-def _run_adhoc(target_host: str, module: str, module_args: str, become: bool = False) -> str:
+
+def _run_adhoc(
+    target_host: str,
+    module: str,
+    module_args: str,
+    become: bool = False,
+) -> str:
     cmd = [
         "ansible", target_host,
         "-i", settings.inventory_path,
         "-m", module,
         "-a", module_args,
+        "--timeout", "30",
     ]
+
     if become:
-        cmd.append("--become")
+        cmd.extend(["--become", "--become-user", "root"])
 
     try:
         result = subprocess.run(
-            cmd, cwd=settings.playbook_dir, capture_output=True, text=True, timeout=120,
+            cmd,
+            cwd=settings.playbook_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
     except subprocess.TimeoutExpired:
         return f"Ad-hoc command against {target_host} timed out."
 
     if result.returncode != 0:
-        return f"Ad-hoc command against {target_host} failed: {result.stderr.strip() or result.stdout.strip()}"
+        error = result.stderr.strip() or result.stdout.strip()
+        return f"Ad-hoc command against {target_host} failed: {error}"
 
     return result.stdout.strip()
 
@@ -162,60 +175,31 @@ def find_zombie_processes_linux(target_host: str) -> str:
 @tool("kill_zombie_processes_linux")
 def kill_zombie_processes_linux(target_host: str) -> str:
     """
-    Attempts to clear zombie processes by signaling their parent processes.
-    Does not kill or restart parent processes automatically.
+    Attempts to clear zombie processes on a Linux host. A zombie is
+    already dead - it can't be killed directly - so this sends SIGCHLD
+    to each zombie's parent PID as a best-effort nudge to make the
+    parent reap it. If zombies persist after this, the parent process
+    itself likely needs to be restarted, which this tool deliberately
+    does NOT do on its own. Call find_zombie_processes_linux again
+    after this to independently confirm the result.
     """
     zombies = find_zombie_processes_linux.func(target_host)
-
-    if "no zombie processes found" in zombies.lower():
+    if "no zombie processes found" in zombies:
         return zombies
 
-    cmd = r'''
-    set -u
+    cmd = (
+        "for ppid in $(ps -eo pid,ppid,stat | awk '$3 ~ /Z/ {print $2}' | sort -u); "
+        "do kill -s CHLD \"$ppid\" 2>/dev/null; done; "
+        "ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/ {print $0}'"
+    )
+    after = _run_adhoc(target_host, "shell", cmd, become=True)
 
-    zombies=$(ps -eo pid=,ppid=,stat=,comm= | awk '$3 ~ /Z/ {print $1, $2, $4}')
-
-    if [ -z "$zombies" ]; then
-        echo "No zombie processes found."
-        exit 0
-    fi
-
-    echo "Zombies detected:"
-    echo "$zombies"
-
-    parents=$(echo "$zombies" | awk '{print $2}' | sort -nu)
-
-    for ppid in $parents; do
-        if [ "$ppid" -le 1 ]; then
-            echo "Skipping parent PID $ppid"
-            continue
-        fi
-
-        if [ -d "/proc/$ppid" ]; then
-            echo "Sending SIGCHLD to parent PID $ppid"
-            kill -s CHLD "$ppid" 2>&1 || true
-        else
-            echo "Parent PID $ppid no longer exists"
-        fi
-    done
-
-    sleep 2
-
-    remaining=$(ps -eo pid=,ppid=,stat=,comm= | awk '$3 ~ /Z/ {print $1, $2, $3, $4}')
-
-    if [ -z "$remaining" ]; then
-        echo "No zombie processes remain."
-    else
-        echo "Zombie processes still present:"
-        echo "$remaining"
-    fi
-    '''
-
-    result = _run_adhoc(target_host, "shell", cmd, become=True)
-
-    return f"{target_host}: Zombie cleanup result:\n{result}"
-
-
+    if not after.strip():
+        return f"{target_host}: sent SIGCHLD to parent process(es); zombies cleared."
+    return (
+        f"{target_host}: sent SIGCHLD to parent process(es), but some zombies remain "
+        f"(their parent likely needs to be restarted manually):\n{after}"
+    )
 
 
 # --- Patching --------------------------------------------------------------
