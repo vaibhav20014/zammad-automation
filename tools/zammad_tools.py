@@ -14,6 +14,7 @@ AWAITING_REPLY_TAG = "awaiting-customer-reply"
 AUTOMATION_DONE_TAG = "automation-processed"
 SPAM_TAG = "automation-spam"
 
+
 @tool("ask_for_more_details")
 def ask_for_more_details(ticket_id: int, question: str) -> str:
     """
@@ -30,6 +31,27 @@ def ask_for_more_details(ticket_id: int, question: str) -> str:
         return f"Ticket #{ticket_id}: sent clarification request; will re-check once customer replies."
     logger.error("ask_for_more_details FAILED for ticket #%s", ticket_id)
     return f"Ticket #{ticket_id}: FAILED to send clarification request - do not assume it was received."
+
+
+@tool("report_outcome")
+def report_outcome(ticket_id: int, message: str, resolved: bool) -> str:
+    """
+    Posts the final outcome of the work to the customer as a public reply
+    and marks the ticket as handled by automation. Call this as the LAST
+    step after running any operational tools. Set resolved=True only if
+    verification confirmed the problem is fixed (the ticket is then
+    closed). Set resolved=False if the fix was partial or failed - the
+    ticket stays open for a human, and your message should say exactly
+    what was found, what was tried, and what still needs doing.
+    """
+    logger.info("report_outcome CALLED for ticket #%s (resolved=%s)", ticket_id, resolved)
+    success = zammad_client.reply_to_ticket(ticket_id, message, close=resolved)
+    if success:
+        zammad_client.tag_ticket(ticket_id, AUTOMATION_DONE_TAG)
+        logger.info("report_outcome SUCCEEDED for ticket #%s", ticket_id)
+        return f"Ticket #{ticket_id}: outcome posted to customer (resolved={resolved})."
+    logger.error("report_outcome FAILED for ticket #%s", ticket_id)
+    return f"Ticket #{ticket_id}: FAILED to post outcome - do not assume the customer saw it."
 
 
 @tool("post_kb_answer")
@@ -63,4 +85,4 @@ def tag_as_spam(ticket_id: int) -> str:
 
 
 def get_tools() -> list:
-    return [ask_for_more_details, post_kb_answer, tag_as_spam]
+    return [ask_for_more_details, report_outcome, post_kb_answer, tag_as_spam]
