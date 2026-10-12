@@ -64,20 +64,19 @@ def _run_adhoc(
 @tool("check_disk_usage")
 def check_disk_usage(target_host: str) -> str:
     """
-    Runs the disk-check-and-clean Ansible playbook against target_host
-    and returns a summary of the result.
+    Reports disk usage for every real filesystem on the host (size, used,
+    available, percent used). Read-only - it does not clean anything. If a
+    filesystem is above ~80%, use find_large_files_linux to see what is
+    taking the space, then clean_temp_files_linux or rotate_logs_linux,
+    and call this tool again afterward to confirm usage dropped.
     """
-    output = ansible_client.run_disk_check(target_host=target_host)
-    if not output:
-        return f"Ansible run against {target_host} failed or returned no output."
+    cmd = "df -h --output=target,size,used,avail,pcent -x tmpfs -x devtmpfs -x squashfs -x overlay"
+    output = _run_adhoc(target_host, "shell", cmd)
 
-    for play in output.get("plays", []):
-        for t in play.get("tasks", []):
-            task_result = t.get("hosts", {}).get(target_host, {})
-            if "msg" in task_result:
-                return f"{target_host}: {task_result['msg']}"
+    if output.startswith("Ad-hoc command"):
+        return f"{target_host}: DISK_CHECK_FAILED - {output}"
 
-    return f"Ansible run against {target_host} completed but produced no readable message."
+    return f"{target_host} disk usage:\n{output}"
 
 
 @tool("run_playbook")
