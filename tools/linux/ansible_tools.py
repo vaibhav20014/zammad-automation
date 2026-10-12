@@ -19,7 +19,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config import settings
-from clients import ansible_client
 from crewai.tools import tool
 
 
