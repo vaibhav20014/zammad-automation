@@ -48,6 +48,11 @@ class Settings:
     vertexai_location: str
     model: str
 
+    # Terraform
+    terraform_workspaces_dir: str
+    aws_access_key_id: str
+    aws_secret_access_key: str
+
 
 def _require(name: str) -> str:
     value = os.getenv(name)
@@ -61,6 +66,10 @@ def _require(name: str) -> str:
 # directly from os.environ, not through our own settings object.
 if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+# in the Settings dataclass
+terraform_workspaces_dir: str
+
 
 
 def load_settings() -> Settings:
@@ -76,6 +85,7 @@ def load_settings() -> Settings:
         playbook_dir=os.getenv("PLAYBOOK_DIR", "/home/ubuntu/zammad-playbooks"),
         playbook_name=os.getenv("PLAYBOOK_NAME", "check_and_clean_disk.yml"),
         ansible_timeout_seconds=int(os.getenv("ANSIBLE_TIMEOUT_SECONDS", "120")),
+
         processed_tag=os.getenv("PROCESSED_TAG", "automation-processed"),
         l2_group_name=os.getenv("L2_GROUP_NAME", "L2-Support"),
         l1_group_name=os.getenv("L1_GROUP_NAME", "L1-Support"),
@@ -89,6 +99,9 @@ def load_settings() -> Settings:
         vertexai_project=_require("VERTEXAI_PROJECT"),
         vertexai_location=os.getenv("VERTEXAI_LOCATION", "global"),
         model=os.getenv("MODEL", "vertex_ai/gemini-2.5-pro"),
+        terraform_workspaces_dir=os.getenv("TERRAFORM_WORKSPACES_DIR", "/home/ubuntu/zammad-terraform/workspaces"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", ""),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
     )
 
 

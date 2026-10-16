@@ -16,6 +16,17 @@ _session.headers.update({
 })
 
 
+
+def get_ticket_articles(ticket_id: int) -> list[dict]:
+    """Return all articles (messages) of a ticket, oldest first."""
+    # ADAPT: use the same base URL / auth header your other client functions use.
+    url = f"{settings.zammad_url}/api/v1/ticket_articles/by_ticket/{ticket_id}"
+    headers = {"Authorization": f"Token token={settings.zammad_token}"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def search_tickets(query: str, limit: int = 20) -> list[dict]:
     resp = _session.get(
         f"{settings.zammad_url}/api/v1/tickets/search",
@@ -136,6 +147,32 @@ def tag_ticket(ticket_id: int, tag: str) -> bool:
         return False
     return True
 
+
+def untag_ticket(ticket_id: int, tag: str) -> bool:
+    """Remove one tag from a ticket. Returns True on success."""
+    url = f"{settings.zammad_url}/api/v1/tags/remove"
+    headers = {"Authorization": f"Token token={settings.zammad_token}"}
+    payload = {"object": "Ticket", "o_id": ticket_id, "item": tag}
+    return requests.delete(url, headers=headers, json=payload, timeout=30).ok
+
+
+def get_ticket_articles(ticket_id: int) -> list[dict]:
+    """Return all articles (messages) of a ticket, oldest first."""
+    url = f"{settings.zammad_url}/api/v1/ticket_articles/by_ticket/{ticket_id}"
+    headers = {"Authorization": f"Token token={settings.zammad_token}"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_ticket_tags(ticket_id: int) -> list[str]:
+    """Return the list of tag names currently on a ticket."""
+    url = f"{settings.zammad_url}/api/v1/tags"
+    headers = {"Authorization": f"Token token={settings.zammad_token}"}
+    params = {"object": "Ticket", "o_id": ticket_id}
+    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    resp.raise_for_status()
+    return resp.json().get("tags", [])
 
 def create_ticket(title: str, group: str, customer_id: str, body: str) -> dict | None:
     payload = {

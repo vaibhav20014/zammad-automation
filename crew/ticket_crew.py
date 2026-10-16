@@ -15,6 +15,9 @@ each ticket gets its own Task, but the agents/crew wiring is shared.
 
 import logging
 from crewai import Task, Crew, Process
+from agents.categorization_agent import build_categorization_agent
+from clients import zammad_client
+from tools.zammad_tools import SPAM_TAG
 
 from agents.router_agent import build_router_agent
 from agents.ansible_agent import build_ansible_agent
@@ -29,17 +32,28 @@ _router = None
 _ansible = None
 _kb = None
 _escalation = None
+_spam = None
+_categorization = None
+_categorization_crew = None
 
 
 def build_crew():
     global _crew, _router, _ansible, _kb, _escalation, _spam
+    global _categorization, _categorization_crew
 
     _router = build_router_agent()
     _ansible = build_ansible_agent()
     _kb = build_kb_agent()
     _escalation = build_escalation_agent()
     _spam = build_spam_agent()
-
+        # Separate crew: categorization is not part of the router's delegation.
+    _categorization = build_categorization_agent()
+    _categorization_crew = Crew(
+        agents=[_categorization],
+        tasks=[],
+        process=Process.sequential,
+        verbose=False,
+    )
     _crew = Crew(
         agents=[_ansible, _kb, _escalation, _spam],
         tasks=[],
@@ -48,6 +62,47 @@ def build_crew():
         verbose=False,
     )
     return _crew
+
+def _categorize_ticket(ticket: dict, ticket_text: str) -> None:
+    """
+    Categorize a ticket as Incident / Service Request / Change Request.
+    Skips spam. Never raises: a categorization problem must not break routing.
+    """
+    if _categorization_crew is None:
+        logger.warning("Categorization crew not built - skipping ticket #%s", ticket["number"])
+        return
+
+    try:
+        tags = zammad_client.get_ticket_tags(ticket["id"])
+        if SPAM_TAG in tags:
+            logger.info("Ticket #%s is spam - skipping categorization", ticket["number"])
+            return
+
+        task = Task(
+            description=(
+                f"ticket_id: {ticket['id']}\n"
+                f"ticket_number: {ticket['number']}\n"
+                f"Title: {ticket.get('title', '')}\n"
+                f"Body: {ticket_text}\n\n"
+                "Read the full ticket conversation, classify the ticket as "
+                "Incident, Service Request, or Change Request, and apply the "
+                "matching tag using the tag_ticket tool with the ticket_id "
+                "exactly as given."
+            ),
+            expected_output=(
+                "The category chosen, the tag applied, whether tag_ticket "
+                "succeeded, and a brief explanation."
+            ),
+            agent=_categorization,
+        )
+
+        logger.info("Categorizing ticket #%s", ticket["number"])
+        _categorization_crew.tasks = [task]
+        result = _categorization_crew.kickoff()
+        logger.debug("Ticket #%s categorization result: %s", ticket["number"], result)
+
+    except Exception:
+        logger.exception("Categorization failed for ticket #%s (routing result unaffected)", ticket["number"])
 
 
 def route_ticket(ticket: dict, ticket_text: str) -> dict:
@@ -93,4 +148,8 @@ def route_ticket(ticket: dict, ticket_text: str) -> dict:
     result = _crew.kickoff()
 
     logger.debug("Ticket #%s crew result: %s", ticket["number"], result)
+
+    # Runs after routing so the spam specialist has already had its chance.
+    _categorize_ticket(ticket, ticket_text)
+
     return result

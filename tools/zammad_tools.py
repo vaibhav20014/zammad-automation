@@ -5,6 +5,8 @@ final text summary to figure out what really occurred is unreliable.
 """
 
 import logging
+import re
+
 from crewai.tools import tool
 from clients import zammad_client
 
@@ -13,6 +15,7 @@ logger = logging.getLogger(__name__)
 AWAITING_REPLY_TAG = "awaiting-customer-reply"
 AUTOMATION_DONE_TAG = "automation-processed"
 SPAM_TAG = "automation-spam"
+CATEGORY_TAGS = {"incident_request", "service_request", "change_request"}
 
 
 @tool("ask_for_more_details")
@@ -84,5 +87,77 @@ def tag_as_spam(ticket_id: int) -> str:
     return f"Ticket #{ticket_id}: FAILED to tag as spam."
 
 
+@tool("tag_ticket")
+def apply_category_tag(ticket_id: int, tag: str) -> str:
+    """
+    Applies the category tag to the ticket after classification.
+    The tag MUST be exactly one of: incident_request (Incident),
+    service_request (Service Request), or change_request (Change Request).
+    Does not reply to, close, or otherwise modify the ticket.
+    """
+    tag = (tag or "").strip().lower()
+    logger.info("tag_ticket CALLED for ticket #%s with tag '%s'", ticket_id, tag)
+
+    if tag not in CATEGORY_TAGS:
+        logger.error("tag_ticket REJECTED invalid tag '%s' for ticket #%s", tag, ticket_id)
+        return (
+            f"Ticket #{ticket_id}: FAILED - invalid tag '{tag}'. "
+            f"Use exactly one of: {', '.join(sorted(CATEGORY_TAGS))}."
+        )
+
+    # Remove any other category tag first so a ticket never ends up with two
+    # categories. A failure here is ignored on purpose: the other tag usually
+    # was not on the ticket, and that must not block the tagging below.
+    for other in CATEGORY_TAGS - {tag}:
+        try:
+            zammad_client.untag_ticket(ticket_id, other)
+        except Exception as exc:
+            logger.warning("untag of '%s' on ticket #%s failed (ignored): %s", other, ticket_id, exc)
+
+    success = zammad_client.tag_ticket(ticket_id, tag)
+    if success:
+        logger.info("tag_ticket SUCCEEDED for ticket #%s with tag '%s'", ticket_id, tag)
+        return f"Ticket #{ticket_id}: tagged as '{tag}'."
+    logger.error("tag_ticket FAILED for ticket #%s with tag '%s'", ticket_id, tag)
+    return f"Ticket #{ticket_id}: FAILED to apply tag '{tag}' - do not assume it was tagged."
+
+
+@tool("get_ticket_conversation")
+def get_ticket_conversation(ticket_id: int) -> str:
+    """
+    Returns the full conversation of a ticket (every message, oldest first,
+    with sender and time). Use this to read the complete ticket before
+    classifying it. Read-only: does not modify the ticket.
+    """
+    logger.info("get_ticket_conversation CALLED for ticket #%s", ticket_id)
+    try:
+        articles = zammad_client.get_ticket_articles(ticket_id)
+    except Exception as exc:
+        logger.error("get_ticket_conversation FAILED for ticket #%s: %s", ticket_id, exc)
+        return f"Ticket #{ticket_id}: FAILED to read conversation: {exc}"
+
+    if not articles:
+        return f"Ticket #{ticket_id}: no messages found."
+
+    parts = []
+    for a in articles:
+        body = re.sub(r"<[^>]+>", " ", a.get("body") or "")  # strip HTML tags
+        body = re.sub(r"\s+", " ", body).strip()
+        parts.append(
+            f"[{a.get('created_at', '?')}] {a.get('from', 'unknown')} "
+            f"({a.get('sender', '?')}) - {a.get('subject') or ''}\n{body}"
+        )
+
+    text = "\n\n".join(parts)
+    return text[:12000]  # cap size so huge threads don't blow up the LLM context
+
+
 def get_tools() -> list:
-    return [ask_for_more_details, report_outcome, post_kb_answer, tag_as_spam]
+    return [
+        ask_for_more_details,
+        report_outcome,
+        post_kb_answer,
+        tag_as_spam,
+        apply_category_tag,
+        get_ticket_conversation,
+    ]
