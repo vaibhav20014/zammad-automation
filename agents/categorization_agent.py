@@ -4,8 +4,7 @@ This agent is responsible for classifying the ticket based on its content and co
 """
 
 from crewai import Agent
-
-from tools.zammad_tools import get_tools as spam_tools
+from tools.zammad_tools import get_categorization_tools
 from config import settings
 
 
@@ -52,13 +51,12 @@ First call get_ticket_conversation with the ticket ID to read the full conversat
 """
 
 def _categorization_tools() -> list:
-    tools = [t for t in get_tools() if t.name in ALLOWED_TOOL_NAMES]
-    found = {t.name for t in tools}
-    missing = ALLOWED_TOOL_NAMES - found
+    tools = get_categorization_tools()
+    missing = ALLOWED_TOOL_NAMES - {t.name for t in tools}
     if missing:
         raise RuntimeError(
             f"Categorization agent is missing required tools: {sorted(missing)}. "
-            "Check get_tools() in tools/zammad_tools.py."
+            "Check get_categorization_tools() in tools/zammad_tools.py."
         )
     return tools
 

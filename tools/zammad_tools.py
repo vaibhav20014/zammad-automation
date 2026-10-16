@@ -4,6 +4,7 @@ with the outcome that actually happened, since parsing the crew's
 final text summary to figure out what really occurred is unreliable.
 """
 
+import html
 import logging
 import re
 
@@ -142,6 +143,7 @@ def get_ticket_conversation(ticket_id: int) -> str:
     parts = []
     for a in articles:
         body = re.sub(r"<[^>]+>", " ", a.get("body") or "")  # strip HTML tags
+        body = html.unescape(body).replace("\xa0", " ")       # decode &nbsp; &amp; etc.
         body = re.sub(r"\s+", " ", body).strip()
         parts.append(
             f"[{a.get('created_at', '?')}] {a.get('from', 'unknown')} "
@@ -153,11 +155,19 @@ def get_ticket_conversation(ticket_id: int) -> str:
 
 
 def get_tools() -> list:
+    # Original tools shared by the Ansible, KB, spam and Terraform agents.
+    # Do not add categorization tools here - they would leak into those agents.
     return [
         ask_for_more_details,
         report_outcome,
         post_kb_answer,
         tag_as_spam,
+    ]
+
+
+def get_categorization_tools() -> list:
+    # Used only by the categorization agent.
+    return [
         apply_category_tag,
         get_ticket_conversation,
     ]
