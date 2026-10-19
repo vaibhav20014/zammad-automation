@@ -166,13 +166,13 @@ def get_ticket_articles(ticket_id: int) -> list[dict]:
 
 
 def get_ticket_tags(ticket_id: int) -> list[str]:
-    """Return the list of tag names currently on a ticket."""
-    url = f"{settings.zammad_url}/api/v1/tags"
-    headers = {"Authorization": f"Token token={settings.zammad_token}"}
-    params = {"object": "Ticket", "o_id": ticket_id}
-    resp = requests.get(url, headers=headers, params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json().get("tags", [])
+       """Return the list of tag names currently on a ticket."""
+       url = f"{settings.zammad_url}/api/v1/tags"
+       headers = {"Authorization": f"Token token={settings.zammad_token}"}
+       params = {"object": "Ticket", "o_id": ticket_id}
+       resp = requests.get(url, headers=headers, params=params, timeout=30)
+       resp.raise_for_status()
+       return resp.json().get("tags", [])
 
 def create_ticket(title: str, group: str, customer_id: str, body: str) -> dict | None:
     payload = {

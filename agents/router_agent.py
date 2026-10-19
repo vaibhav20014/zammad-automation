@@ -34,5 +34,5 @@ def build_router_agent() -> Agent:
         backstory=BACKSTORY,
         llm=settings.model,
         allow_delegation=True,
-        verbose=False,
+        verbose=True,
     )

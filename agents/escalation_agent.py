@@ -23,7 +23,7 @@ def build_escalation_agent() -> Agent:
         backstory=BACKSTORY,
         tools=escalation_tools.get_tools(),
         llm=settings.model,
-        verbose=False,
+        verbose=True,
     )
 
     

@@ -52,14 +52,14 @@ def build_crew():
         agents=[_categorization],
         tasks=[],
         process=Process.sequential,
-        verbose=False,
+        verbose=True,
     )
     _crew = Crew(
         agents=[_ansible, _kb, _escalation, _spam],
         tasks=[],
         process=Process.hierarchical,
         manager_agent=_router,
-        verbose=False,
+        verbose=True,
     )
     return _crew
 

@@ -162,12 +162,8 @@ def get_tools() -> list:
         report_outcome,
         post_kb_answer,
         tag_as_spam,
-    ]
-
-
-def get_categorization_tools() -> list:
-    # Used only by the categorization agent.
-    return [
         apply_category_tag,
         get_ticket_conversation,
     ]
+
+

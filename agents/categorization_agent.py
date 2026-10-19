@@ -4,16 +4,11 @@ This agent is responsible for classifying the ticket based on its content and co
 """
 
 from crewai import Agent
-from tools.zammad_tools import get_categorization_tools
+from tools.zammad_tools import get_tools as get_categorization_tools
 from config import settings
 
 
 # ... ROLE, GOAL, BACKSTORY stay exactly as they are ...
-
-# Only the tools this agent is allowed to use.
-ALLOWED_TOOL_NAMES = {"get_ticket_conversation", "tag_ticket"}
-
-
 
 ROLE = "Categorization specialist"
 
@@ -50,24 +45,13 @@ Do not reply to customers, close tickets, or perform other ticket operations,
 First call get_ticket_conversation with the ticket ID to read the full conversation, then classify it.
 """
 
-def _categorization_tools() -> list:
-    tools = get_categorization_tools()
-    missing = ALLOWED_TOOL_NAMES - {t.name for t in tools}
-    if missing:
-        raise RuntimeError(
-            f"Categorization agent is missing required tools: {sorted(missing)}. "
-            "Check get_categorization_tools() in tools/zammad_tools.py."
-        )
-    return tools
-
-
 
 def build_categorization_agent() -> Agent:
     return Agent(
         role=ROLE,
         goal=GOAL,
         backstory=BACKSTORY,
-        tools=_categorization_tools(),
+        tools=get_categorization_tools(),
         llm=settings.model,
         allow_delegation=False,
         verbose=True,
