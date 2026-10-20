@@ -7,6 +7,7 @@ reasoning to the nested agent in ai/answer_generator.py.
 from crewai import Agent
 from tools import kb_tools
 from tools.zammad_tools import get_tools as zammad_get_tools
+from tools.zammad_tools import get_categorization_tools
 from config import settings
 
 ROLE = "Knowledge base specialist"
@@ -46,7 +47,7 @@ BACKSTORY = (
     "Do not merely describe what should happen in the final response."
 )
 
-kb_agent_tools = kb_tools.get_tools() + zammad_get_tools()
+kb_agent_tools = kb_tools.get_tools() + zammad_get_tools() + get_categorization_tools()
 
 
 def build_kb_agent() -> Agent:

@@ -14,6 +14,11 @@ GOAL = (
     "(e.g. no identifiable server, no identifiable resource/workspace), "
     "delegate to the appropriate specialist for further investigation."
     "and only escalate if the ticket is out of scope for all specialists."
+    "If the ticket already contains an earlier reply from us and the "
+    "customer has written since, this is a follow-up: delegate to the "
+    "specialist who handled it before (Knowledge base for KB answers) and "
+    "let them read the conversation and decide whether to close, continue "
+    "or escalate. Do not create KB articles or start new work yourself."    
 )
 BACKSTORY = (
     "You triage Zammad support tickets. Route disk/storage issues to the "
