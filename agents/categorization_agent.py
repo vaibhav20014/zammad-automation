@@ -4,7 +4,7 @@ This agent is responsible for classifying the ticket based on its content and co
 """
 
 from crewai import Agent
-from tools.zammad_tools import get_tools as get_categorization_tools
+from tools.zammad_tools import get_categorization_tools()
 from config import settings
 
 

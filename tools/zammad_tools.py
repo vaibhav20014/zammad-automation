@@ -61,14 +61,24 @@ def report_outcome(ticket_id: int, message: str, resolved: bool) -> str:
 @tool("post_kb_answer")
 def post_kb_answer(ticket_id: int, answer_text: str, close: bool) -> str:
     """
-    Posts a drafted answer back to the ticket as a public reply. Set
-    close=True only if confident the answer fully resolves the ticket.
+    Posts a drafted answer back to the ticket as a public reply.
+    close=False: the answer is posted and the ticket is tagged as awaiting the
+    customer's reply (use this when posting a KB answer for the first time).
+    close=True: use ONLY after the customer has confirmed the issue is resolved;
+    the ticket is closed and marked as handled by automation.
     """
     logger.info("post_kb_answer CALLED for ticket #%s (close=%s)", ticket_id, close)
     success = zammad_client.reply_to_ticket(ticket_id, answer_text, close=close)
     if success:
-        zammad_client.tag_ticket(ticket_id, AUTOMATION_DONE_TAG)
-        logger.info("post_kb_answer SUCCEEDED for ticket #%s", ticket_id)
+        if close:
+            zammad_client.tag_ticket(ticket_id, AUTOMATION_DONE_TAG)
+            try:
+                zammad_client.untag_ticket(ticket_id, AWAITING_REPLY_TAG)
+            except Exception as exc:
+                logger.warning("could not remove awaiting tag on ticket #%s (ignored): %s", ticket_id, exc)
+        else:
+            zammad_client.tag_ticket(ticket_id, AWAITING_REPLY_TAG)
+        logger.info("post_kb_answer SUCCEEDED for ticket #%s (closed=%s)", ticket_id, close)
         return f"Ticket #{ticket_id}: answer posted (closed={close})."
     logger.error("post_kb_answer FAILED for ticket #%s", ticket_id)
     return f"Ticket #{ticket_id}: FAILED to post answer - do not assume it was received."
@@ -162,8 +172,12 @@ def get_tools() -> list:
         report_outcome,
         post_kb_answer,
         tag_as_spam,
-        apply_category_tag,
-        get_ticket_conversation,
     ]
 
 
+def get_categorization_tools() -> list:
+    # Used only by the categorization agent.
+    return [
+        apply_category_tag,
+        get_ticket_conversation,
+    ]
