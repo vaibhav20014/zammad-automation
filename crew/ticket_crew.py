@@ -131,6 +131,15 @@ def route_ticket(ticket: dict, ticket_text: str) -> dict:
         "(e.g. a billing question, a non-technical request), or if a "
         "specialist you delegated to reports back that it's still stuck "
         "after asking for clarification."
+        "If the ticket is spam, unsolicited advertising, a joke or test "
+        "message, or is not a genuine IT support request of any kind (for "
+        "example asking to buy food, products or personal items), delegate "
+        "to the spam classification specialist. Do not escalate these.\n\n"
+        "Only delegate directly to the escalation specialist yourself if "
+        "the ticket is a genuine IT or business support request that doesn't "
+        "fit any specialist's domain (e.g. a billing question), or if a "
+        "specialist you delegated to reports back that it's still stuck "
+        "after asking for clarification."
     )
 
     task = Task(
