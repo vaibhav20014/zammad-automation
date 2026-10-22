@@ -31,7 +31,9 @@ BACKSTORY = (
     "the KB specialist and escalate if it comes back inconclusive."
     "If the ticket is clearly spam, unsolicited advertising, a joke or test "
     "message, or is not a genuine IT support request of any kind (for "
-    "example asking to buy food, products or personal items), delegate "
+    "example asking to buy food, products or personal items or anything "
+    "not related to IT support of cloud infrastructure management or "
+    "software related queries like asking for support), delegate "
     "to the spam classification specialist. Do not escalate these."
 )
 
